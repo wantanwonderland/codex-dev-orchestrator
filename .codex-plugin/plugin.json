@@ -1,0 +1,21 @@
+{
+  "name": "codex-dev-orchestrator",
+  "version": "0.1.0+codex.local-20260719T181635Z",
+  "description": "Durable, review-gated software delivery with native Codex subagents.",
+  "author": {
+    "name": "Wantan"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Codex Dev Orchestrator",
+    "shortDescription": "Plan, execute, review, and verify with Codex",
+    "longDescription": "A durable Codex-only delivery workflow with Markdown handoffs, role-specific native subagents, writer leases, independent reviews, browser QA, and explicit production gates.",
+    "developerName": "Wantan",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": "Use Codex Dev Orchestrator to plan and deliver this change."
+  }
+}

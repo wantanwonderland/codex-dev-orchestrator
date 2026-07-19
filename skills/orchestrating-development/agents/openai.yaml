@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orchestrating Development"
+  short_description: "Run durable plan-build-review workflows"
+  default_prompt: "Use $orchestrating-development to plan and deliver this change."

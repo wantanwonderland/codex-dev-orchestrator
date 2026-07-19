@@ -1,0 +1,31 @@
+{
+  "description": "Codex Dev Orchestrator writer, secret, and production safety guardrails.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$PLUGIN_ROOT/scripts/run-hook.sh\"",
+            "timeout": 10,
+            "statusMessage": "Loading durable workflow state"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|apply_patch|Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$PLUGIN_ROOT/scripts/run-hook.sh\"",
+            "timeout": 10,
+            "statusMessage": "Checking workflow safety policy"
+          }
+        ]
+      }
+    ]
+  }
+}
