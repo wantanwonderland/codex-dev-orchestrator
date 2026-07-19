@@ -16,7 +16,7 @@ function rootOf(options: { root?: string }): string {
 }
 
 const program = new Command();
-program.name("cdo").description("Durable Codex-only development orchestration").version("0.1.0");
+program.name("cdo").description("Durable Codex-only development orchestration").version("0.1.1");
 
 program
   .command("init")

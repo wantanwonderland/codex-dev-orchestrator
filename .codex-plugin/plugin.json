@@ -1,6 +1,6 @@
 {
   "name": "codex-dev-orchestrator",
-  "version": "0.1.0+codex.local-20260719T181635Z",
+  "version": "0.1.1",
   "description": "Durable, review-gated software delivery with native Codex subagents.",
   "author": {
     "name": "Wantan"

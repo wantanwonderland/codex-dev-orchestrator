@@ -1,0 +1,47 @@
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { findRelevantGovernance } from "../src/hook-governance.js";
+
+async function writeState(root: string, status: "executing" | "complete", withLease = false) {
+  const runtime = join(root, ".codex/workflow-runtime/wf-1");
+  await mkdir(runtime, { recursive: true });
+  const now = new Date().toISOString();
+  await writeFile(join(runtime, "state.json"), JSON.stringify({
+    schema: "cdo-state/v1",
+    workflowId: "wf-1",
+    projectRoot: root,
+    objective: "test hook governance",
+    tier: "normal",
+    mode: "human_gated",
+    status,
+    phase: "phase-1",
+    writerLease: withLease ? { role: "executor", sessionId: "writer-session", acquiredAt: now } : undefined,
+    retryCount: 0,
+    remediationRounds: 0,
+    operationFailures: {},
+    createdAt: now,
+    updatedAt: now,
+  }));
+}
+
+describe("hook governance discovery", () => {
+  it("does not govern a repository that has no active workflow", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cdo-hook-"));
+    expect(await findRelevantGovernance(root, "interactive-session")).toEqual({ active: false });
+    await writeState(root, "complete");
+    expect(await findRelevantGovernance(root, "interactive-session")).toEqual({ active: false, lease: undefined });
+  });
+
+  it("finds active governance and the owning lease from a repository subdirectory", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cdo-hook-"));
+    const nested = join(root, "apps/api");
+    await mkdir(nested, { recursive: true });
+    await writeState(root, "executing", true);
+    expect(await findRelevantGovernance(nested, "writer-session")).toMatchObject({
+      active: true,
+      lease: { role: "executor", sessionId: "writer-session" },
+    });
+  });
+});

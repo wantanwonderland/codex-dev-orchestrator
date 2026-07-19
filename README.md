@@ -2,7 +2,7 @@
 
 Codex Dev Orchestrator (CDO) turns one interactive Codex terminal into the durable “brain” for a plan → build → review → fix → browser-verify workflow. It uses native Codex subagents, repository-tracked Markdown handoffs, an untracked runtime journal, exclusive writer leases, and explicit human gates. It does not require an OpenAI API key when Codex CLI is signed in with a supported ChatGPT subscription.
 
-This repository is both the plugin source and the reference implementation. Version 0.1.0 is intentionally local-first: it can be installed from a personal marketplace, but this checkout does not publish or create a GitHub repository automatically.
+This repository is both the plugin source and the reference implementation. Version 0.1.x is intentionally local-first: install it from a personal marketplace, then use it to coordinate work in any local Git repository.
 
 ## Why this exists
 
