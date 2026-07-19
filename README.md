@@ -120,10 +120,11 @@ gh --version
 
 ## Build and verify the source checkout
 
-Run from this repository:
+Clone and run from this repository:
 
 ```bash
-cd /Users/shafuan/Documents/project/codex-dev-orchestrator
+gh repo clone wantanwonderland/codex-dev-orchestrator
+cd codex-dev-orchestrator
 pnpm install
 pnpm verify
 ```
@@ -135,7 +136,7 @@ pnpm verify
 The local installer creates one symlink at `~/plugins/codex-dev-orchestrator`, one `codex-dev-orchestrator` entry in `~/.agents/plugins/marketplace.json`, one guarded `cdo` CLI symlink, and one user-level Codex MCP registration. It refuses to replace unrelated paths, registrations, or a non-personal marketplace.
 
 ```bash
-cd /Users/shafuan/Documents/project/codex-dev-orchestrator
+cd codex-dev-orchestrator
 pnpm install:local
 codex plugin add codex-dev-orchestrator@personal
 ```
@@ -468,7 +469,7 @@ Repository config contains only profile names, environments, roles, and allowed 
   "local": {
     "environment": "local",
     "allowedHosts": ["localhost"],
-    "command": ["/Users/shafuan/.codex/workflow-secrets/demo-project/local-login-adapter"]
+    "command": ["/home/alice/.codex/workflow-secrets/demo-project/local-login-adapter"]
   }
 }
 ```
@@ -578,7 +579,8 @@ Invalid transitions fail. Execution without a persisted plan approval fails. Com
 The local installer places a guarded symlink at `~/.local/bin/cdo`. Ensure that directory is in `PATH`. You can always use the source command:
 
 ```bash
-pnpm --dir /Users/shafuan/Documents/project/codex-dev-orchestrator exec cdo doctor --self
+cd codex-dev-orchestrator
+node dist/cli.js doctor --self
 ```
 
 ### Plugin changes are not visible
@@ -586,7 +588,7 @@ pnpm --dir /Users/shafuan/Documents/project/codex-dev-orchestrator exec cdo doct
 Build, refresh the local installation, reinstall, and start a new thread:
 
 ```bash
-cd /Users/shafuan/Documents/project/codex-dev-orchestrator
+cd codex-dev-orchestrator
 pnpm refresh:local
 codex plugin remove codex-dev-orchestrator@personal
 codex plugin add codex-dev-orchestrator@personal
@@ -625,7 +627,7 @@ Remove the installed plugin first, then the local marketplace entry and source s
 
 ```bash
 codex plugin remove codex-dev-orchestrator@personal
-cd /Users/shafuan/Documents/project/codex-dev-orchestrator
+cd codex-dev-orchestrator
 pnpm uninstall:local
 ```
 
