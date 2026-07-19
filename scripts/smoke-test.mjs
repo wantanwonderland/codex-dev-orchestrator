@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { access, constants, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,6 +8,8 @@ import { spawnSync } from "node:child_process";
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const cli = join(root, "dist", "cli.js");
 const demo = await mkdtemp(join(tmpdir(), "cdo-smoke-"));
+
+await access(cli, constants.X_OK);
 
 function run(program, args, expect = 0) {
   const result = spawnSync(program, args, { cwd: demo, encoding: "utf8" });

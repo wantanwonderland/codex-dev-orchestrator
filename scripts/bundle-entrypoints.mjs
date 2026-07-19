@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { build } from "esbuild";
+import { chmod } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,3 +19,4 @@ for (const name of ["cli", "mcp", "hook"]) {
     legalComments: "none",
   });
 }
+await chmod(join(root, "dist", "cli.js"), 0o755);
