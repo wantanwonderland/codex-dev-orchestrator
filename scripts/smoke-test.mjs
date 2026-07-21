@@ -32,6 +32,15 @@ try {
   run("git", ["commit", "-m", "init"]);
   run(process.execPath, [cli, "init", "--project-id", "demo-project", "--default-branch", "main"]);
   run(process.execPath, [cli, "doctor"]);
+  const restrictedHook = spawnSync(join(root, "scripts", "run-hook.sh"), [], {
+    cwd: demo,
+    encoding: "utf8",
+    input: JSON.stringify({ hook_event_name: "SessionStart", cwd: demo, source: "startup" }),
+    env: { HOME: process.env.HOME, PATH: "/usr/bin:/bin", PLUGIN_ROOT: root },
+  });
+  if (restrictedHook.status !== 0) {
+    throw new Error(`Hook failed with restricted PATH (${restrictedHook.status})\n${restrictedHook.stdout}\n${restrictedHook.stderr}`);
+  }
   run(process.execPath, [cli, "start", "Build a customer-visible account settings page", "--id", "account-settings", "--tier", "large"]);
   run(process.execPath, [cli, "validate-artifacts", "account-settings"]);
   const planAssignment = JSON.parse(run(process.execPath, [cli, "assign", "account-settings", "--operation", "planning", "--role", "planner", "--stage", "planning", "--input", "spec.md", "--output", "plan.md", "--kind", "plan"]));
