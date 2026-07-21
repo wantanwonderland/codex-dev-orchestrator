@@ -12,11 +12,15 @@ try {
   const result = await client.listTools();
   const expected = [
     "acquire_writer_lease",
+    "bind_agent_assignment",
     "classify_task_risk",
     "completion_gate",
+    "create_agent_assignment",
     "delete_browser_auth_state",
     "issue_browser_auth_state",
+    "list_agent_assignments",
     "persist_workflow_artifact",
+    "reconcile_agent_assignment",
     "record_agent_failure",
     "record_agent_success",
     "release_writer_lease",

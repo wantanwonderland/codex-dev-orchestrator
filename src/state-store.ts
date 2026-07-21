@@ -2,6 +2,7 @@ import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import {
+  WorkflowIdSchema,
   WorkflowStateSchema,
   type WorkflowMode,
   type WorkflowState,
@@ -13,7 +14,7 @@ const TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
   draft_plan: ["awaiting_plan_approval", "blocked"],
   awaiting_plan_approval: ["executing", "blocked"],
   executing: ["reviewing", "browser_verification", "blocked"],
-  reviewing: ["remediating", "browser_verification", "complete", "blocked"],
+  reviewing: ["executing", "remediating", "browser_verification", "complete", "blocked"],
   remediating: ["reviewing", "blocked"],
   browser_verification: ["remediating", "complete", "blocked"],
   blocked: ["draft_plan", "awaiting_plan_approval", "executing", "reviewing", "browser_verification"],
@@ -21,15 +22,17 @@ const TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
 };
 
 export class StateStore {
+  readonly workflowId: string;
   readonly runtimeDir: string;
   readonly statePath: string;
   readonly eventsPath: string;
 
   constructor(
     readonly projectRoot: string,
-    readonly workflowId: string,
+    workflowId: string,
   ) {
-    this.runtimeDir = join(projectRoot, ".codex", "workflow-runtime", workflowId);
+    this.workflowId = WorkflowIdSchema.parse(workflowId);
+    this.runtimeDir = join(projectRoot, ".codex", "workflow-runtime", this.workflowId);
     this.statePath = join(this.runtimeDir, "state.json");
     this.eventsPath = join(this.runtimeDir, "events.jsonl");
   }
@@ -82,6 +85,10 @@ export class StateStore {
     }
     const remediationRounds = status === "remediating" ? state.remediationRounds + 1 : state.remediationRounds;
     return this.save({ ...state, status, remediationRounds }, event, { from: state.status, to: status, remediationRounds });
+  }
+
+  async recordEvent(type: string, detail: Record<string, unknown> = {}): Promise<void> {
+    await this.appendEvent(type, detail);
   }
 
   private async persist(state: WorkflowState): Promise<void> {

@@ -4,5 +4,5 @@ model = "gpt-5.6-terra"
 model_reasoning_effort = "medium"
 sandbox_mode = "workspace-write"
 developer_instructions = """
-Implement only the approved task brief. Acquire the workflow writer lease before editing and release it after committing. Use test-first development for behavior changes. Preserve unrelated work. Run every specified focused check and report exact commands, results, commit, changed files, residual risks, and browser needs in a cdo/v1 executor-report. Do not self-approve, merge, deploy, or perform production mutations.
+Implement only the approved assignment and task brief. Confirm the assignment ID, operation key, stage, paths, and source commit before editing. Acquire the workflow writer lease, use test-first development for behavior changes, preserve unrelated work, run every specified check, commit atomically, and release the lease before handoff. Write the expected cdo/v1 executor-report with assignment_id, operation_key, agent_role, source/target commits, exact commands, results, changed files, residual risks, and browser needs. Return the assignment ID, report path, commit, checks, changed files, and blockers. Do not self-approve, merge, deploy, or perform production mutations.
 """

@@ -1,6 +1,6 @@
 {
   "name": "codex-dev-orchestrator",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Durable Codex-only development orchestration plugin",
   "type": "module",
   "license": "MIT",

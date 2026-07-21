@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const WorkflowTierSchema = z.enum(["small", "normal", "large"]);
 export const WorkflowModeSchema = z.enum(["human_gated", "local_auto", "remote_auto"]);
+export const WorkflowIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 export const WorkflowStatusSchema = z.enum([
   "draft_plan",
   "awaiting_plan_approval",
@@ -13,6 +14,17 @@ export const WorkflowStatusSchema = z.enum([
   "complete",
 ]);
 export const WriterRoleSchema = z.enum(["executor", "fixer"]);
+export const AgentRoleSchema = z.enum(["planner", "executor", "reviewer", "fixer", "browser-verifier"]);
+export const AssignmentStageSchema = z.enum([
+  "planning",
+  "implementation",
+  "task_review",
+  "phase_review",
+  "remediation",
+  "browser_verification",
+]);
+export const AssignmentStatusSchema = z.enum(["queued", "running", "stopped", "reconciling", "reconciled", "failed", "blocked"]);
+export const AssignmentOutcomeSchema = z.enum(["succeeded", "retry", "blocked"]);
 
 export const WriterLeaseSchema = z.object({
   role: WriterRoleSchema,
@@ -22,7 +34,7 @@ export const WriterLeaseSchema = z.object({
 
 export const WorkflowStateSchema = z.object({
   schema: z.literal("cdo-state/v1"),
-  workflowId: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  workflowId: WorkflowIdSchema,
   projectRoot: z.string().min(1),
   objective: z.string().min(1),
   tier: WorkflowTierSchema,
@@ -52,18 +64,20 @@ export type WriterRole = z.infer<typeof WriterRoleSchema>;
 export type WriterLease = z.infer<typeof WriterLeaseSchema>;
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
+export const ArtifactKindSchema = z.enum([
+  "index",
+  "spec",
+  "plan",
+  "phase-plan",
+  "task-brief",
+  "executor-report",
+  "review",
+  "browser-report",
+]);
+
 export const ArtifactFrontmatterSchema = z.object({
   schema: z.literal("cdo/v1"),
-  kind: z.enum([
-    "index",
-    "spec",
-    "plan",
-    "phase-plan",
-    "task-brief",
-    "executor-report",
-    "review",
-    "browser-report",
-  ]),
+  kind: ArtifactKindSchema,
   workflow_id: z.string().min(1),
   phase: z.string().optional(),
   task: z.string().optional(),
@@ -72,9 +86,52 @@ export const ArtifactFrontmatterSchema = z.object({
   updated_at: z.string().datetime(),
   source_commit: z.string().optional(),
   target_commit: z.string().optional(),
+  assignment_id: z.string().uuid().optional(),
+  operation_key: z.string().min(1).optional(),
+  agent_role: AgentRoleSchema.optional(),
 });
 
 export type ArtifactFrontmatter = z.infer<typeof ArtifactFrontmatterSchema>;
+export type ArtifactKind = z.infer<typeof ArtifactKindSchema>;
+
+export const AgentAssignmentSchema = z.object({
+  id: z.string().uuid(),
+  workflowId: WorkflowIdSchema,
+  operationKey: z.string().min(1),
+  role: AgentRoleSchema,
+  stage: AssignmentStageSchema,
+  inputPath: z.string().min(1),
+  outputPath: z.string().min(1),
+  expectedKind: ArtifactKindSchema,
+  attempt: z.number().int().min(1).max(2),
+  status: AssignmentStatusSchema,
+  agentId: z.string().min(1).optional(),
+  writerLeaseSessionId: z.string().min(1).optional(),
+  sourceCommit: z.string().min(1).optional(),
+  targetCommit: z.string().min(1).optional(),
+  assignedAt: z.string().datetime(),
+  startedAt: z.string().datetime().optional(),
+  stoppedAt: z.string().datetime().optional(),
+  reconciledAt: z.string().datetime().optional(),
+  stopReason: z.string().optional(),
+  error: z.string().optional(),
+  outcome: AssignmentOutcomeSchema.optional(),
+  artifactStatus: ArtifactFrontmatterSchema.shape.status.optional(),
+  nextAction: z.string().min(1).optional(),
+  targetWorkflowStatus: WorkflowStatusSchema.optional(),
+});
+
+export const SessionLedgerSchema = z.object({
+  schema: z.literal("cdo-sessions/v1"),
+  workflowId: WorkflowIdSchema,
+  assignments: z.array(AgentAssignmentSchema),
+});
+
+export type AgentRole = z.infer<typeof AgentRoleSchema>;
+export type AssignmentStage = z.infer<typeof AssignmentStageSchema>;
+export type AssignmentStatus = z.infer<typeof AssignmentStatusSchema>;
+export type AgentAssignment = z.infer<typeof AgentAssignmentSchema>;
+export type SessionLedger = z.infer<typeof SessionLedgerSchema>;
 
 export const ProjectConfigSchema = z.object({
   project: z.object({

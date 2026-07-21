@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { resolve } from "node:path";
-import { approvePlan, initializeProject, startWorkflow } from "./project.js";
-import { acquireLease, releaseLease, statusSummary, transitionWorkflow } from "./workflow.js";
-import { WorkflowModeSchema, WorkflowTierSchema } from "./types.js";
+import { approvePlan, initializeProject, startWorkflow, upgradeProject } from "./project.js";
+import { acquireLease, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, releaseLease, statusSummary, transitionWorkflow } from "./workflow.js";
+import { AgentRoleSchema, ArtifactKindSchema, AssignmentStageSchema, WorkflowModeSchema, WorkflowTierSchema } from "./types.js";
 import { classifyRisk } from "./risk.js";
 import { validateWorkflowArtifacts } from "./artifacts.js";
 import { projectDoctor, selfDoctor } from "./doctor.js";
@@ -16,7 +16,7 @@ function rootOf(options: { root?: string }): string {
 }
 
 const program = new Command();
-program.name("cdo").description("Durable Codex-only development orchestration").version("0.1.1");
+program.name("cdo").description("Durable Codex-only development orchestration").version("0.2.0");
 
 program
   .command("init")
@@ -46,6 +46,15 @@ program
   });
 
 program
+  .command("upgrade-project")
+  .option("--root <path>", "project root")
+  .action(async (options) => {
+    const result = await upgradeProject(rootOf(options));
+    console.log(`Project templates upgraded: ${result.updated.length} updated, ${result.unchanged.length} unchanged, ${result.recommended.length} preserved with recommendations`);
+    for (const path of result.recommended) console.log(`Review recommended template: ${path}`);
+  });
+
+program
   .command("approve-plan")
   .argument("<workflow-id>")
   .requiredOption("--by <identity>")
@@ -62,7 +71,66 @@ program
   .option("--json")
   .action(async (workflowId, options) => {
     const state = await statusSummary(rootOf(options), workflowId);
-    console.log(options.json ? JSON.stringify(state, null, 2) : `${state.workflowId}: ${state.status} (${state.phase})`);
+    const active = state.coordination.activeAssignments.map((assignment) => `${assignment.role}/${assignment.status}`).join(", ");
+    console.log(options.json ? JSON.stringify(state, null, 2) : `${state.workflowId}: ${state.status} (${state.phase}) | ${active || "no active agent"} | next: ${state.coordination.nextAction}`);
+  });
+
+program
+  .command("assign")
+  .argument("<workflow-id>")
+  .requiredOption("--operation <key>")
+  .requiredOption("--role <role>")
+  .requiredOption("--stage <stage>")
+  .requiredOption("--input <relative-path>")
+  .requiredOption("--output <relative-path>")
+  .requiredOption("--kind <artifact-kind>")
+  .option("--source-commit <sha>")
+  .option("--target-commit <sha>")
+  .option("--root <path>")
+  .action(async (workflowId, options) => {
+    const assignment = await createAgentAssignment(rootOf(options), workflowId, {
+      operationKey: options.operation,
+      role: AgentRoleSchema.parse(options.role),
+      stage: AssignmentStageSchema.parse(options.stage),
+      inputPath: options.input,
+      outputPath: options.output,
+      expectedKind: ArtifactKindSchema.parse(options.kind),
+      sourceCommit: options.sourceCommit,
+      targetCommit: options.targetCommit,
+    });
+    console.log(JSON.stringify(assignment, null, 2));
+  });
+
+program
+  .command("assignments")
+  .argument("<workflow-id>")
+  .option("--root <path>")
+  .option("--json")
+  .action(async (workflowId, options) => {
+    const assignments = await listAgentAssignments(rootOf(options), workflowId);
+    console.log(options.json ? JSON.stringify(assignments, null, 2) : assignments.map((assignment) => `${assignment.id} ${assignment.role} ${assignment.status} ${assignment.operationKey}`).join("\n"));
+  });
+
+program
+  .command("bind-agent")
+  .argument("<workflow-id>")
+  .argument("<assignment-id>")
+  .requiredOption("--event <start-or-stop>")
+  .requiredOption("--agent <agent-id>")
+  .option("--reason <stop-reason>")
+  .option("--root <path>")
+  .action(async (workflowId, assignmentId, options) => {
+    if (!["start", "stop"].includes(options.event)) throw new Error("--event must be start or stop");
+    console.log(JSON.stringify(await bindAgentAssignment(rootOf(options), workflowId, assignmentId, options.event, options.agent, options.reason), null, 2));
+  });
+
+program
+  .command("reconcile")
+  .argument("<workflow-id>")
+  .argument("<assignment-id>")
+  .option("--root <path>")
+  .action(async (workflowId, assignmentId, options) => {
+    console.log(JSON.stringify(await reconcileAgentAssignment(rootOf(options), workflowId, assignmentId), null, 2));
   });
 
 program

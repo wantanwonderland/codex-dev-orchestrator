@@ -3,12 +3,14 @@ import { join } from "node:path";
 import { parseArtifact } from "./frontmatter.js";
 import { classifyRisk } from "./risk.js";
 import { run } from "./process.js";
+import { WorkflowIdSchema } from "./types.js";
 
 export async function assessCompletionGate(projectRoot: string, workflowId: string): Promise<{
   ready: boolean;
   missing: string[];
   customerVisibleUi: boolean;
 }> {
+  workflowId = WorkflowIdSchema.parse(workflowId);
   const root = join(projectRoot, ".codex", "workflows", workflowId);
   const planningText = await readAvailable([
     join(root, "index.md"),

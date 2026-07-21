@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArtifact } from "./frontmatter.js";
+import { WorkflowIdSchema } from "./types.js";
 
 export async function validateWorkflowArtifacts(projectRoot: string, workflowId: string): Promise<string[]> {
+  workflowId = WorkflowIdSchema.parse(workflowId);
   const root = join(projectRoot, ".codex", "workflows", workflowId);
   const paths = await markdownFiles(root);
   if (!paths.some((path) => path.endsWith("/index.md"))) throw new Error("Workflow index.md is missing");
@@ -22,6 +24,7 @@ export async function persistWorkflowArtifact(
   relativePath: string,
   markdown: string,
 ): Promise<string> {
+  workflowId = WorkflowIdSchema.parse(workflowId);
   const workflowRoot = resolve(projectRoot, ".codex", "workflows", workflowId);
   const target = resolve(workflowRoot, relativePath);
   const relation = relative(workflowRoot, target);

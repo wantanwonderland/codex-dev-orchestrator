@@ -1,0 +1,938 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="data:,">
+    <title>Codex Dev Orchestrator Process Flow</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #f4f1e8;
+        --ink: #181713;
+        --muted: #676158;
+        --line: #24221d;
+        --brass: #b58a35;
+        --mint: #4f9276;
+        --coral: #bf5c4c;
+        --blue: #426c95;
+        --white: #fffaf0;
+        --shadow: 0 18px 45px rgba(34, 29, 21, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          linear-gradient(rgba(24, 23, 19, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(24, 23, 19, 0.045) 1px, transparent 1px),
+          var(--paper);
+        background-size: 28px 28px;
+        color: var(--ink);
+        font-family: Georgia, "Times New Roman", serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 26px 0 42px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        min-height: 48px;
+        border-bottom: 2px solid var(--line);
+      }
+
+      .mark {
+        display: inline-grid;
+        grid-template-columns: 34px auto;
+        align-items: center;
+        gap: 10px;
+        font-family: "Courier New", monospace;
+        font-weight: 700;
+        letter-spacing: 0;
+      }
+
+      .mark-symbol {
+        width: 34px;
+        height: 34px;
+        display: grid;
+        place-items: center;
+        background: var(--ink);
+        color: var(--white);
+        border-radius: 4px;
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .nav a {
+        color: var(--ink);
+        text-decoration: none;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        border: 1px solid var(--line);
+        padding: 8px 10px;
+        background: rgba(255, 250, 240, 0.72);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 0.82fr) minmax(360px, 1.18fr);
+        gap: 30px;
+        align-items: end;
+        padding: 34px 0 22px;
+      }
+
+      .kicker {
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        color: var(--coral);
+        font-weight: 700;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 620px;
+        font-size: clamp(40px, 7vw, 82px);
+        line-height: 0.92;
+        letter-spacing: 0;
+        margin-top: 14px;
+      }
+
+      .lede {
+        max-width: 620px;
+        margin-top: 18px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.55;
+      }
+
+      .summary-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border: 2px solid var(--line);
+        background: var(--white);
+        box-shadow: var(--shadow);
+      }
+
+      .summary-item {
+        min-height: 130px;
+        padding: 18px;
+        border-right: 2px solid var(--line);
+      }
+
+      .summary-item:last-child {
+        border-right: 0;
+      }
+
+      .summary-item strong {
+        display: block;
+        font-family: "Courier New", monospace;
+        font-size: 13px;
+        text-transform: uppercase;
+      }
+
+      .summary-item span {
+        display: block;
+        margin-top: 12px;
+        line-height: 1.45;
+        color: var(--muted);
+      }
+
+      .section {
+        padding: 38px 0 4px;
+      }
+
+      .section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 16px;
+        border-bottom: 2px solid var(--line);
+        padding-bottom: 12px;
+      }
+
+      h2 {
+        font-size: clamp(28px, 3.2vw, 44px);
+        letter-spacing: 0;
+      }
+
+      .section-head p {
+        max-width: 460px;
+        color: var(--muted);
+        line-height: 1.45;
+      }
+
+      .boundary {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 72px minmax(0, 1fr);
+        align-items: stretch;
+        gap: 0;
+      }
+
+      .lane {
+        border: 2px solid var(--line);
+        background: var(--white);
+        min-height: 420px;
+      }
+
+      .lane header {
+        padding: 16px 18px;
+        border-bottom: 2px solid var(--line);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        background: #efe3c7;
+      }
+
+      .lane:nth-child(3) header {
+        background: #dbe8df;
+      }
+
+      .lane h3 {
+        font-size: 25px;
+      }
+
+      .badge {
+        flex: 0 0 auto;
+        border: 1px solid var(--line);
+        padding: 5px 8px;
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+        background: var(--paper);
+      }
+
+      .steps {
+        display: grid;
+        gap: 12px;
+        padding: 16px;
+      }
+
+      .step {
+        display: grid;
+        grid-template-columns: 40px minmax(0, 1fr);
+        gap: 12px;
+        align-items: start;
+        min-height: 80px;
+        padding: 13px;
+        border: 1px solid rgba(24, 23, 19, 0.34);
+        background: rgba(255, 250, 240, 0.72);
+      }
+
+      .num {
+        width: 40px;
+        height: 40px;
+        display: grid;
+        place-items: center;
+        border: 2px solid var(--line);
+        background: var(--ink);
+        color: var(--white);
+        font-family: "Courier New", monospace;
+        font-weight: 700;
+      }
+
+      .step b {
+        display: block;
+        font-size: 18px;
+      }
+
+      .step small {
+        display: block;
+        margin-top: 5px;
+        color: var(--muted);
+        line-height: 1.4;
+      }
+
+      .bridge {
+        position: relative;
+        display: grid;
+        place-items: center;
+        min-height: 420px;
+      }
+
+      .bridge::before {
+        content: "";
+        position: absolute;
+        top: 28px;
+        bottom: 28px;
+        left: 50%;
+        border-left: 2px dashed var(--line);
+      }
+
+      .bridge span {
+        position: relative;
+        z-index: 1;
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+        padding: 12px 7px;
+        background: var(--paper);
+        border: 2px solid var(--line);
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      .flow-board {
+        border: 2px solid var(--line);
+        background: var(--white);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .flow-toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 12px;
+        border-bottom: 2px solid var(--line);
+        background: #e8ece7;
+        overflow-x: auto;
+      }
+
+      .flow-tab {
+        min-width: 118px;
+        min-height: 40px;
+        border: 1px solid var(--line);
+        background: var(--white);
+        color: var(--ink);
+        cursor: pointer;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+      }
+
+      .flow-tab[aria-selected="true"] {
+        background: var(--ink);
+        color: var(--white);
+      }
+
+      .flow-canvas {
+        padding: 18px;
+      }
+
+      .lifecycle {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(120px, 1fr));
+        gap: 10px;
+      }
+
+      .life-node {
+        position: relative;
+        min-height: 178px;
+        border: 2px solid var(--line);
+        padding: 13px;
+        background: #fff8ea;
+      }
+
+      .life-node::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        right: -12px;
+        width: 12px;
+        border-top: 2px solid var(--line);
+      }
+
+      .life-node:last-child::after,
+      .life-node[data-stop="true"]::after {
+        display: none;
+      }
+
+      .life-node:nth-child(2),
+      .life-node:nth-child(5) {
+        background: #eef5ef;
+      }
+
+      .life-node:nth-child(4),
+      .life-node:nth-child(7) {
+        background: #f5e6df;
+      }
+
+      .life-node code,
+      .agent code,
+      .file-map code {
+        display: inline-block;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        background: rgba(24, 23, 19, 0.08);
+        padding: 2px 4px;
+      }
+
+      .life-node strong {
+        display: block;
+        font-size: 18px;
+        line-height: 1.1;
+      }
+
+      .life-node p {
+        margin-top: 9px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.38;
+      }
+
+      .handoff-loop {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 0;
+        margin-top: 16px;
+        border: 2px solid var(--line);
+      }
+
+      .handoff-step {
+        position: relative;
+        min-height: 132px;
+        padding: 14px;
+        border-right: 2px solid var(--line);
+        background: #eef5ef;
+      }
+
+      .handoff-step:last-child {
+        border-right: 0;
+        background: #fff3d8;
+      }
+
+      .handoff-step code {
+        display: block;
+        width: fit-content;
+        margin-bottom: 8px;
+        padding: 2px 4px;
+        background: rgba(24, 23, 19, 0.08);
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+      }
+
+      .handoff-step strong {
+        display: block;
+        font-size: 16px;
+      }
+
+      .handoff-step p {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.38;
+      }
+
+      .handoff-alert {
+        margin-top: 10px;
+        padding: 10px 12px;
+        border-left: 5px solid var(--rust);
+        background: #f5e6df;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .agents-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .agent {
+        min-height: 180px;
+        padding: 14px;
+        border: 2px solid var(--line);
+        background: var(--white);
+      }
+
+      .agent[data-readonly="true"] {
+        background: #eef5ef;
+      }
+
+      .agent[data-writer="true"] {
+        background: #fff3d8;
+      }
+
+      .agent h3 {
+        font-size: 19px;
+      }
+
+      .agent p {
+        margin-top: 10px;
+        color: var(--muted);
+        line-height: 1.4;
+        font-size: 14px;
+      }
+
+      .model-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 12px;
+      }
+
+      .pill {
+        border: 1px solid var(--line);
+        background: rgba(255, 250, 240, 0.85);
+        padding: 5px 7px;
+        font-family: "Courier New", monospace;
+        font-size: 11px;
+      }
+
+      .file-map {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .file-col {
+        min-height: 220px;
+        border: 2px solid var(--line);
+        background: var(--white);
+        padding: 16px;
+      }
+
+      .file-col h3 {
+        font-size: 22px;
+      }
+
+      .file-col ul {
+        list-style: none;
+        margin: 14px 0 0;
+        padding: 0;
+        display: grid;
+        gap: 9px;
+      }
+
+      .file-col li {
+        border-left: 4px solid var(--brass);
+        padding-left: 10px;
+        line-height: 1.35;
+        color: var(--muted);
+      }
+
+      .note-band {
+        margin-top: 34px;
+        border-top: 2px solid var(--line);
+        border-bottom: 2px solid var(--line);
+        padding: 18px 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 22px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .note-band strong {
+        color: var(--ink);
+      }
+
+      @media (max-width: 980px) {
+        .hero,
+        .boundary,
+        .note-band {
+          grid-template-columns: 1fr;
+        }
+
+        .summary-strip,
+        .file-map {
+          grid-template-columns: 1fr;
+        }
+
+        .summary-item {
+          border-right: 0;
+          border-bottom: 2px solid var(--line);
+        }
+
+        .summary-item:last-child {
+          border-bottom: 0;
+        }
+
+        .bridge {
+          min-height: 74px;
+        }
+
+        .bridge::before {
+          top: 50%;
+          bottom: auto;
+          left: 24px;
+          right: 24px;
+          border-left: 0;
+          border-top: 2px dashed var(--line);
+        }
+
+        .bridge span {
+          writing-mode: horizontal-tb;
+          transform: none;
+        }
+
+        .lifecycle,
+        .agents-grid,
+        .handoff-loop {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .handoff-step {
+          border-right: 0;
+          border-bottom: 2px solid var(--line);
+        }
+
+        .handoff-step:last-child {
+          border-bottom: 0;
+        }
+
+        .life-node::after {
+          display: none;
+        }
+      }
+
+      @media (max-width: 560px) {
+        .shell {
+          width: min(100% - 20px, 1180px);
+          padding-top: 16px;
+        }
+
+        .topbar,
+        .section-head {
+          align-items: stretch;
+          flex-direction: column;
+        }
+
+        .nav {
+          justify-content: flex-start;
+        }
+
+        .hero {
+          grid-template-columns: minmax(0, 1fr);
+          padding-top: 24px;
+        }
+
+        h1 {
+          font-size: 42px;
+        }
+
+        .lede {
+          font-size: 16px;
+        }
+
+        .lifecycle,
+        .agents-grid,
+        .handoff-loop {
+          grid-template-columns: 1fr;
+        }
+
+        .lane header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <nav class="topbar" aria-label="Page sections">
+        <div class="mark">
+          <span class="mark-symbol">CDO</span>
+          <span>Codex Dev Orchestrator</span>
+        </div>
+        <div class="nav">
+          <a href="#install">Install</a>
+          <a href="#lifecycle">Lifecycle</a>
+          <a href="#agents">Agents</a>
+          <a href="#state">State</a>
+        </div>
+      </nav>
+
+      <section class="hero" aria-labelledby="page-title">
+        <div>
+          <div class="kicker">Local-first orchestration map</div>
+          <h1 id="page-title">One coordinator. Fresh agents. Durable handoffs.</h1>
+          <p class="lede">
+            CDO is installed once for the user, then initialized inside each target repository. Every role receives a durable assignment, reports back through lifecycle hooks, and advances only after evidence reconciliation.
+          </p>
+        </div>
+        <div class="summary-strip" aria-label="Core process summary">
+          <div class="summary-item">
+            <strong>User-level install</strong>
+            <span>Plugin, MCP server, hooks, and the `cdo` command are registered for the current machine user.</span>
+          </div>
+          <div class="summary-item">
+            <strong>Project init</strong>
+            <span>Each Git repo receives `.codex/workflow.toml`, role agents, tracked workflow files, and ignored runtime state.</span>
+          </div>
+          <div class="summary-item">
+            <strong>Accountable handoff</strong>
+            <span>The coordinator assigns an owner, waits for completion, validates the artifact and Git evidence, then routes the next role.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="install" aria-labelledby="install-title">
+        <div class="section-head">
+          <h2 id="install-title">Install Boundary</h2>
+          <p>The system has a machine-level plugin layer and a repo-local workflow layer. They are intentionally separate.</p>
+        </div>
+        <div class="boundary">
+          <article class="lane">
+            <header>
+              <h3>User-level</h3>
+              <span class="badge">install once</span>
+            </header>
+            <div class="steps">
+              <div class="step">
+                <span class="num">1</span>
+                <div><b>Build source checkout</b><small>`pnpm verify` proves TypeScript, tests, plugin metadata, skills, README diagrams, smoke tests, and self-doctor.</small></div>
+              </div>
+              <div class="step">
+                <span class="num">2</span>
+                <div><b>Register personal plugin</b><small>`pnpm install:local` links `~/plugins/codex-dev-orchestrator` and updates the personal marketplace entry.</small></div>
+              </div>
+              <div class="step">
+                <span class="num">3</span>
+                <div><b>Expose CLI and MCP</b><small>`~/.local/bin/cdo` points to the built CLI, and Codex gets a user-level MCP registration.</small></div>
+              </div>
+              <div class="step">
+                <span class="num">4</span>
+                <div><b>Add in Codex</b><small>`codex plugin add codex-dev-orchestrator@personal`, then start a fresh Codex thread.</small></div>
+              </div>
+            </div>
+          </article>
+
+          <div class="bridge" aria-hidden="true"><span>then initialize repos</span></div>
+
+          <article class="lane">
+            <header>
+              <h3>Per project</h3>
+              <span class="badge">init per repo</span>
+            </header>
+            <div class="steps">
+              <div class="step">
+                <span class="num">1</span>
+                <div><b>Run `cdo init`</b><small>Creates workflow policy, role agents, managed-template hashes, workflow folders, and local runtime state.</small></div>
+              </div>
+              <div class="step">
+                <span class="num">2</span>
+                <div><b>Commit the contract</b><small>Track workflow policy, `cdo-managed.json`, role agents, workflow artifacts, and `.gitignore` changes.</small></div>
+              </div>
+              <div class="step">
+                <span class="num">3</span>
+                <div><b>Start a workflow</b><small>`cdo start` creates draft or awaiting-approval artifacts for small, normal, or large work.</small></div>
+              </div>
+              <div class="step">
+                <span class="num">4</span>
+                <div><b>Assign and route</b><small>The coordinator registers each assignment, waits for its owner, reconciles evidence, and follows the returned next action.</small></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="lifecycle" aria-labelledby="lifecycle-title">
+        <div class="section-head">
+          <h2 id="lifecycle-title">Delivery Lifecycle</h2>
+          <p>Select a stage to pin its gate. The sequence is built from the README's end-to-end flow and state machine.</p>
+        </div>
+        <div class="flow-board">
+          <div class="flow-toolbar" role="tablist" aria-label="Lifecycle stages">
+            <button class="flow-tab" role="tab" aria-selected="true" data-stage="plan">Plan gate</button>
+            <button class="flow-tab" role="tab" aria-selected="false" data-stage="handoff">Handoff loop</button>
+            <button class="flow-tab" role="tab" aria-selected="false" data-stage="write">Writer lease</button>
+            <button class="flow-tab" role="tab" aria-selected="false" data-stage="review">Review gate</button>
+            <button class="flow-tab" role="tab" aria-selected="false" data-stage="browser">Browser gate</button>
+          </div>
+          <div class="flow-canvas">
+            <div class="lifecycle" aria-label="End-to-end process flow">
+              <article class="life-node" data-group="plan">
+                <code>draft</code>
+                <strong>Human objective</strong>
+                <p>The user describes the desired change in one Codex terminal. The coordinator starts or resumes durable state.</p>
+              </article>
+              <article class="life-node" data-group="plan">
+                <code>awaiting_plan_approval</code>
+                <strong>Planner artifact</strong>
+                <p>A planning assignment binds the planner to an exact input, output, operation key, and artifact contract.</p>
+              </article>
+              <article class="life-node" data-group="plan">
+                <code>approved</code>
+                <strong>Human approval</strong>
+                <p>The exact persisted plan is approved. CDO stores approver, timestamp, and SHA-256.</p>
+              </article>
+              <article class="life-node" data-group="write">
+                <code>executing</code>
+                <strong>Executor writes</strong>
+                <p>Executor works in the phase worktree after assignment start and exclusive writer-lease acquisition.</p>
+              </article>
+              <article class="life-node" data-group="review">
+                <code>reviewing</code>
+                <strong>Independent review</strong>
+                <p>Reviewer checks the task or whole phase from source evidence and returns GO, GO WITH FIXES, or NO-GO.</p>
+              </article>
+              <article class="life-node" data-group="review">
+                <code>remediating</code>
+                <strong>Fixer loop</strong>
+                <p>Fixer remediates accepted findings, commits evidence, and sends the work back for fresh review.</p>
+              </article>
+              <article class="life-node" data-group="browser" data-stop="true">
+                <code>complete</code>
+                <strong>Browser and publish gate</strong>
+                <p>Customer-visible UI needs live browser proof. Merge or deployment still requires explicit human instruction.</p>
+              </article>
+            </div>
+            <div class="handoff-loop" aria-label="Agent assignment and notification loop">
+              <article class="handoff-step" data-group="handoff">
+                <code>queued</code>
+                <strong>1. Assign owner</strong>
+                <p>Coordinator records role, stage, operation, paths, expected artifact, commit range, and attempt.</p>
+              </article>
+              <article class="handoff-step" data-group="handoff">
+                <code>bind start</code>
+                <strong>2. Acknowledge</strong>
+                <p>The coordinator binds the returned child ID explicitly; the start hook does it automatically when unambiguous.</p>
+              </article>
+              <article class="handoff-step" data-group="handoff">
+                <code>running</code>
+                <strong>3. Do the work</strong>
+                <p>The coordinator keeps the turn alive while the assigned specialist produces its evidence.</p>
+              </article>
+              <article class="handoff-step" data-group="handoff">
+                <code>bind stop</code>
+                <strong>4. Notify lead</strong>
+                <p>The stop hook notifies the lead; explicit binding recovers missed or ambiguous lifecycle events.</p>
+              </article>
+              <article class="handoff-step" data-group="handoff">
+                <code>nextAction</code>
+                <strong>5. Verify and route</strong>
+                <p>Artifact, Git, lease, and state checks decide reviewer, fixer, browser QA, retry, block, or completion.</p>
+              </article>
+            </div>
+            <div class="handoff-alert">A stopped agent is not a successful agent. Missing or malformed evidence receives one fresh-session retry; the second failure blocks for human reconciliation.</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="agents" aria-labelledby="agents-title">
+        <div class="section-head">
+          <h2 id="agents-title">Agent Roles</h2>
+          <p>Planner and reviewer spend the higher reasoning budget. Worker-style roles use the medium Terra default.</p>
+        </div>
+        <div class="agents-grid">
+          <article class="agent" data-writer="true">
+            <h3>Coordinator</h3>
+            <div class="model-line"><span class="pill">gpt-5.6-terra</span><span class="pill">medium</span></div>
+            <p>Assigns owners, waits for results, reconciles evidence, and immediately routes the next accountable role.</p>
+          </article>
+          <article class="agent" data-readonly="true">
+            <h3>Planner</h3>
+            <div class="model-line"><span class="pill">gpt-5.6-sol</span><span class="pill">high</span></div>
+            <p>Reads the repo and writes complete implementation contracts without mutating source.</p>
+          </article>
+          <article class="agent" data-writer="true">
+            <h3>Executor</h3>
+            <div class="model-line"><span class="pill">gpt-5.6-terra</span><span class="pill">medium</span></div>
+            <p>Implements approved task briefs after acquiring the writer lease.</p>
+          </article>
+          <article class="agent" data-readonly="true">
+            <h3>Reviewer</h3>
+            <div class="model-line"><span class="pill">gpt-5.6-sol</span><span class="pill">high</span></div>
+            <p>Independently reviews exact ranges and whole phases before completion.</p>
+          </article>
+          <article class="agent" data-writer="true">
+            <h3>Fixer</h3>
+            <div class="model-line"><span class="pill">gpt-5.6-terra</span><span class="pill">medium</span></div>
+            <p>Fixes accepted review findings and maps every fix to evidence.</p>
+          </article>
+          <article class="agent">
+            <h3>Browser verifier</h3>
+            <div class="model-line"><span class="pill">gpt-5.6-terra</span><span class="pill">medium</span></div>
+            <p>Checks real UI workflows at desktop and mobile sizes and writes browser proof.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="state" aria-labelledby="state-title">
+        <div class="section-head">
+          <h2 id="state-title">State And Files</h2>
+          <p>The handoff contract is tracked. Runtime bookkeeping stays local and ignored.</p>
+        </div>
+        <div class="file-map">
+          <article class="file-col">
+            <h3>Plugin source</h3>
+            <ul>
+              <li><code>agents/*.toml</code> native role templates</li>
+              <li><code>src/*.ts</code> CLI, MCP, state, gates, leases</li>
+              <li><code>hooks/hooks.json</code> guardrail hook definitions</li>
+            </ul>
+          </article>
+          <article class="file-col">
+            <h3>Tracked per project</h3>
+            <ul>
+              <li><code>.codex/workflow.toml</code> model, effort, git, browser, and credential policy</li>
+              <li><code>.codex/cdo-managed.json</code> installed template version and hashes</li>
+              <li><code>.codex/agents/*.toml</code> copied role templates for the repo</li>
+              <li><code>.codex/workflows/*</code> spec, plan, tasks, reports, reviews, browser artifacts</li>
+            </ul>
+          </article>
+          <article class="file-col">
+            <h3>Ignored runtime</h3>
+            <ul>
+              <li><code>.codex/workflow-runtime/state.json</code> current workflow status</li>
+              <li><code>.codex/workflow-runtime/sessions.json</code> assignment and handoff ledger</li>
+              <li><code>.codex/workflow-runtime/events.jsonl</code> append-only event journal</li>
+              <li>Writer lease and retry counters for the active workflow</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <aside class="note-band" aria-label="Operating notes">
+        <p><strong>Important boundary:</strong> CDO can create local commits through executor and fixer agents, but it does not merge, deploy, or mutate production without a current explicit human instruction.</p>
+        <p><strong>Resume model:</strong> a fresh Codex session reconciles any stopped assignment, then reads Git, tracked Markdown, and runtime state instead of trusting old chat history.</p>
+      </aside>
+    </main>
+
+    <script>
+      const tabs = Array.from(document.querySelectorAll(".flow-tab"));
+      const nodes = Array.from(document.querySelectorAll(".life-node, .handoff-step"));
+
+      function selectStage(stage) {
+        tabs.forEach((tab) => {
+          tab.setAttribute("aria-selected", String(tab.dataset.stage === stage));
+        });
+        nodes.forEach((node) => {
+          const active = node.dataset.group === stage;
+          node.style.outline = active ? "4px solid rgba(181, 138, 53, 0.55)" : "0";
+          node.style.transform = active ? "translateY(-3px)" : "none";
+        });
+      }
+
+      tabs.forEach((tab) => {
+        tab.addEventListener("click", () => selectStage(tab.dataset.stage));
+      });
+    </script>
+  </body>
+</html>

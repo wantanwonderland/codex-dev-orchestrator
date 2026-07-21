@@ -1,8 +1,8 @@
 # Codex Dev Orchestrator
 
-Codex Dev Orchestrator (CDO) turns one interactive Codex terminal into the durable “brain” for a plan → build → review → fix → browser-verify workflow. It uses native Codex subagents, repository-tracked Markdown handoffs, an untracked runtime journal, exclusive writer leases, and explicit human gates. It does not require an OpenAI API key when Codex CLI is signed in with a supported ChatGPT subscription.
+Codex Dev Orchestrator (CDO) turns one interactive Codex terminal into the durable “brain” for a plan → build → review → fix → browser-verify workflow. It uses explicit role assignments, native Codex subagents, lifecycle notifications, repository-tracked Markdown handoffs, an untracked runtime journal, exclusive writer leases, and explicit human gates. It does not require an OpenAI API key when Codex CLI is signed in with a supported ChatGPT subscription.
 
-This repository is both the plugin source and the reference implementation. Version 0.1.x is intentionally local-first: install it from a personal marketplace, then use it to coordinate work in any local Git repository.
+This repository is both the plugin source and the reference implementation. Version 0.2.x is intentionally local-first: install it from a personal marketplace, then use it to coordinate work in any local Git repository.
 
 ## Why this exists
 
@@ -31,7 +31,7 @@ flowchart LR
     C --> F[Fixer<br/>Terra / medium / writer]
     C --> B[Browser verifier<br/>Terra / medium / product-read-only]
     C <--> M[MCP control server]
-    M <--> S[Runtime state.json<br/>events.jsonl]
+    M <--> S[Runtime state.json<br/>sessions.json<br/>events.jsonl]
     P --> A[Tracked Markdown artifacts]
     E --> A
     R --> A
@@ -44,7 +44,7 @@ flowchart LR
     CB --> SEC[External secrets directory]
 ```
 
-The model remains the decision-maker. The TypeScript layer owns deterministic state transitions, schema validation, context budgets, lease ownership, credential adapter execution, and guarded GitHub commands. This split keeps judgment flexible while making safety-critical bookkeeping testable.
+The model remains the decision-maker. The TypeScript layer owns deterministic assignment lifecycle, state transitions, schema validation, context budgets, lease ownership, credential adapter execution, and guarded GitHub commands. `SubagentStart` and `SubagentStop` hooks bind native agent activity to durable assignments. A stop event is only a notification; reconciliation of the expected artifact and Git evidence is what advances the workflow.
 
 ### End-to-end sequence
 
@@ -59,14 +59,18 @@ sequenceDiagram
     participant Browser
 
     Human->>Coordinator: Describe objective
-    Coordinator->>Planner: Read repository and write plan artifact
+    Coordinator->>Coordinator: Register planning assignment
+    Coordinator->>Planner: Assignment ID + repository and output paths
     Planner-->>Coordinator: Complete Markdown, returned verbatim
+    Coordinator->>Coordinator: Persist and reconcile assignment
     Coordinator-->>Human: Persisted plan awaiting approval
     Human->>Coordinator: Approve the exact persisted plan
-    Coordinator->>Executor: Approved task path + base/head contract
+    Coordinator->>Coordinator: Register implementation assignment
+    Coordinator->>Executor: Assignment ID + approved task + base/head contract
     Executor->>Executor: Acquire writer lease, test-first implementation, commit
-    Executor-->>Coordinator: Evidence report
-    Coordinator->>Reviewer: Independent base..head review
+    Executor-->>Coordinator: Stop notification + evidence report
+    Coordinator->>Coordinator: Reconcile artifact, Git, and released lease
+    Coordinator->>Reviewer: Fresh assignment for independent base..head review
     alt Findings exist
         Reviewer-->>Coordinator: NO-GO or GO WITH FIXES
         Coordinator->>Fixer: Review path and bounded remediation
@@ -174,12 +178,13 @@ Initialization creates:
 │   ├── executor.toml
 │   ├── reviewer.toml
 │   ├── fixer.toml
-│   └── browser-verifier.toml
+    │   └── browser-verifier.toml
+├── cdo-managed.json               # installed template version and hashes
 ├── workflows/                     # tracked workflow contracts
 └── workflow-runtime/              # ignored local runtime state
 ```
 
-CDO never overwrites an existing `.codex/config.toml`. It writes `.codex/config.cdo-recommended.toml` for a human-reviewed merge instead. It also adds `.codex/workflow-runtime/` to the target repository’s `.gitignore` without replacing existing rules.
+CDO never overwrites an existing `.codex/config.toml`. It writes `.codex/config.cdo-recommended.toml` for a human-reviewed merge instead. `cdo-managed.json` records stock agent-template hashes for safe future upgrades. CDO also adds `.codex/workflow-runtime/` to the target repository’s `.gitignore` without replacing existing rules.
 
 The generated `.codex/workflow.toml` is complete and immediately usable:
 
@@ -223,7 +228,7 @@ auto_draft_pr = true
 require_approval_if_deploy_coupled = true
 ```
 
-Commit `.codex/workflow.toml`, `.codex/agents/`, and `.gitignore` so every fresh session sees the same rules.
+Commit `.codex/workflow.toml`, `.codex/cdo-managed.json`, `.codex/agents/`, and `.gitignore` so every fresh session sees the same rules.
 
 ## Start workflows
 
@@ -311,18 +316,34 @@ Approval records the approver, timestamp, and SHA-256 of the persisted plan. Edi
 
 ## Execution, review, and remediation
 
-The coordinator creates one feature branch and isolated Git worktree per phase. The executor or fixer must acquire the exclusive writer lease using the actual Codex session ID:
+The coordinator creates one feature branch and isolated Git worktree per phase. Before spawning a role agent, it registers the exact team handoff:
+
+```bash
+cdo assign approved-content \
+  --operation task-1-implementation \
+  --role executor \
+  --stage implementation \
+  --input tasks/task-1.md \
+  --output reports/task-1.md \
+  --kind executor-report
+```
+
+The returned assignment ID goes into the child prompt and the artifact front matter. After native spawn returns its child ID, the coordinator binds it deterministically with `cdo bind-agent WORKFLOW ASSIGNMENT --event start --agent CHILD_ID`. The `SubagentStart` and `SubagentStop` hooks perform the same lifecycle updates when routing is unambiguous; explicit binding is the recovery path when several workflows have the same role queued. The coordinator keeps its turn active, waits for the child, binds `stop` if needed, and does not report a handoff as successful yet.
+
+The executor or fixer must acquire the exclusive writer lease using the actual Codex parent session ID:
 
 ```bash
 cdo acquire-writer approved-content --role executor --session session-123
 ```
 
-After tests, evidence report, and a local commit:
+After tests, evidence report, a local commit, and lease release, the coordinator reconciles the stopped assignment:
 
 ```bash
 cdo release-writer approved-content --session session-123
-cdo transition approved-content reviewing
+cdo reconcile approved-content ASSIGNMENT_ID
 ```
+
+Reconciliation validates assignment identity, role, operation key, artifact kind and status, commit evidence, and released writer ownership. It returns `assign_reviewer`, `assign_fixer`, `assign_browser-verifier`, `continue_approved_plan`, `await_plan_approval`, `complete`, a one-time retry, or `human_reconciliation`. The coordinator follows that result immediately.
 
 The lease prevents a second executor/fixer session from becoming the authorized writer. Planner and reviewer agents are configured read-only. Native subagent hook events identify the parent thread, so the coordinator passes that parent session ID into the lease call and never overlaps a reviewer with a writer. Hook policy blocks common write tools when the parent thread does not own an active lease. Because hooks cannot distinguish every child path and do not cover every specialized tool, read-only agent configuration, sequential routing, Git diff review, and isolated worktrees remain required defense-in-depth.
 
@@ -380,6 +401,9 @@ created_at: 2026-07-20T00:00:00.000Z
 updated_at: 2026-07-20T00:00:00.000Z
 source_commit: 43d17960
 target_commit: 08e48463
+assignment_id: 174f21ea-ae21-4a25-9078-85f52c149cc3
+operation_key: task-1-implementation
+agent_role: executor
 ---
 ```
 
@@ -387,7 +411,7 @@ The authoritative order is:
 
 1. Git commits and the checked-out worktree.
 2. Tracked workflow Markdown.
-3. Runtime `state.json` and `events.jsonl` for coordination.
+3. Runtime `state.json`, `sessions.json`, and `events.jsonl` for coordination.
 4. GitHub PR/check state.
 5. Chat history only as a convenience.
 
@@ -396,18 +420,18 @@ For workflow `approved-content`, runtime files live under `.codex/workflow-runti
 ```text
 state.json       # atomically replaced current state, mode 0600
 events.jsonl     # append-only event history
-sessions.json    # reserved for session routing metadata
+sessions.json    # atomic cdo-sessions/v1 assignment and handoff ledger
 logs/            # untracked diagnostic logs
 ```
 
-The current implementation creates `state.json` and `events.jsonl`; session and log paths are reserved by the contract and may be added without changing tracked artifacts.
+`sessions.json` records every queued, running, stopped, reconciling, reconciled, failed, or blocked assignment. Writes are serialized with a cross-process lock and atomic replacement. `reconciling` persists the routing decision before workflow mutation so a repeated call can safely finish an interrupted reconciliation. `events.jsonl` remains the append-only audit stream. Both stay ignored because tracked Markdown and Git remain the cross-session delivery contract.
 
 ## Resume after closing Codex
 
 Open the same target repository in a fresh terminal and say:
 
 ```text
-Use $orchestrating-development to resume workflow approved-content from durable state. Reconcile Git, tracked artifacts, the active worktree, runtime state, and any PR before routing the next agent.
+Use $orchestrating-development to resume workflow approved-content from durable state. Reconcile any stopped assignment, then reconcile Git, tracked artifacts, the active worktree, runtime state, and any PR before routing the next agent.
 ```
 
 Or inspect state first:
@@ -421,6 +445,12 @@ gh pr view --json number,state,isDraft,headRefName,baseRefName,statusCheckRollup
 ```
 
 Never infer completion from an old agent summary. If Git and runtime state disagree, stop automatic routing, preserve both sources, and reconcile from commit and event evidence.
+
+`cdo status` reports the active role, assignment status, blocker, and deterministic next action:
+
+```text
+approved-content: reviewing (phase-1) | reviewer/running | next: wait_for_reviewer
+```
 
 ## Production-standard browser verification
 
@@ -595,6 +625,17 @@ codex plugin add codex-dev-orchestrator@personal
 ```
 
 Then open `/hooks` in the new thread and trust the current hash.
+
+Upgrade every existing initialized project without overwriting custom agent instructions:
+
+```bash
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+cd "$PROJECT_ROOT"
+cdo upgrade-project
+cdo doctor
+```
+
+Stock templates are updated in place. Customized templates are preserved and the new version is written beside them as `NAME.cdo-recommended.toml` for manual review.
 
 ### Existing `.codex/config.toml`
 

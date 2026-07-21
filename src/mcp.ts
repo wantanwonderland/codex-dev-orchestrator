@@ -2,17 +2,17 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { acquireLease, recordAgentFailure, recordAgentSuccess, releaseLease, statusSummary, transitionWorkflow } from "./workflow.js";
+import { acquireLease, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, recordAgentFailure, recordAgentSuccess, releaseLease, statusSummary, transitionWorkflow } from "./workflow.js";
 import { classifyRisk } from "./risk.js";
 import { issueBrowserAuthState, deleteBrowserAuthState } from "./credentials.js";
 import { assessCompletionGate } from "./gates.js";
 import { persistWorkflowArtifact } from "./artifacts.js";
 
 const server = new McpServer(
-  { name: "codex-dev-orchestrator", version: "0.1.1" },
+  { name: "codex-dev-orchestrator", version: "0.2.0" },
   {
     instructions:
-      "Use tracked .codex/workflows Markdown as the handoff contract and runtime state only for coordination. Require explicit plan approval before execution. Only an executor or fixer holding the writer lease may mutate source. Deployment and production mutations always require explicit human instruction.",
+      "Create a durable assignment before every native subagent spawn, wait for the child, reconcile its cdo/v1 artifact and Git evidence, then follow nextAction. Use tracked .codex/workflows Markdown as the handoff contract and runtime state only for coordination. Require explicit plan approval before execution. Only an executor or fixer holding the writer lease may mutate source. Deployment and production mutations always require explicit human instruction.",
   },
 );
 
@@ -22,6 +22,10 @@ const additive = { readOnlyHint: false, destructiveHint: false, idempotentHint: 
 const destructive = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false } as const;
 
 server.registerTool("workflow_status", { description: "Read durable workflow status before routing work.", inputSchema: { projectRoot: z.string(), workflowId: z.string() }, annotations: readOnly }, async ({ projectRoot, workflowId }) => text(await statusSummary(projectRoot, workflowId)));
+server.registerTool("create_agent_assignment", { description: "Register a durable role assignment before spawning a native Codex subagent.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), operationKey: z.string(), role: z.enum(["planner", "executor", "reviewer", "fixer", "browser-verifier"]), stage: z.enum(["planning", "implementation", "task_review", "phase_review", "remediation", "browser_verification"]), inputPath: z.string(), outputPath: z.string(), expectedKind: z.enum(["plan", "task-brief", "executor-report", "review", "browser-report"]), sourceCommit: z.string().optional(), targetCommit: z.string().optional() }, annotations: additive }, async (input) => text(await createAgentAssignment(input.projectRoot, input.workflowId, input)));
+server.registerTool("list_agent_assignments", { description: "List durable assignment and handoff state for a workflow.", inputSchema: { projectRoot: z.string(), workflowId: z.string() }, annotations: readOnly }, async (input) => text(await listAgentAssignments(input.projectRoot, input.workflowId)));
+server.registerTool("bind_agent_assignment", { description: "Explicitly bind a native subagent ID to one durable assignment when lifecycle hook routing is ambiguous or needs recovery.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), assignmentId: z.string().uuid(), event: z.enum(["start", "stop"]), agentId: z.string().min(1), stopReason: z.string().optional() }, annotations: additive }, async (input) => text(await bindAgentAssignment(input.projectRoot, input.workflowId, input.assignmentId, input.event, input.agentId, input.stopReason)));
+server.registerTool("reconcile_agent_assignment", { description: "Validate a stopped agent's expected artifact and route the workflow to its next owner or retry gate.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), assignmentId: z.string().uuid() }, annotations: destructive }, async (input) => text(await reconcileAgentAssignment(input.projectRoot, input.workflowId, input.assignmentId)));
 server.registerTool("classify_task_risk", { description: "Classify fixed review triggers for a task.", inputSchema: { text: z.array(z.string()) }, annotations: readOnly }, async ({ text: input }) => text(classifyRisk(input)));
 server.registerTool("acquire_writer_lease", { description: "Acquire the exclusive writer lease for an executor or fixer session.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), role: z.enum(["executor", "fixer"]), sessionId: z.string() }, annotations: additive }, async (input) => text(await acquireLease(input.projectRoot, input.workflowId, input.role, input.sessionId)));
 server.registerTool("release_writer_lease", { description: "Release a writer lease owned by this session.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), sessionId: z.string() }, annotations: destructive }, async (input) => text(await releaseLease(input.projectRoot, input.workflowId, input.sessionId)));
