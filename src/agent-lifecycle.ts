@@ -21,7 +21,7 @@ export interface AgentLifecycleResult {
 export async function handleAgentLifecycle(input: AgentLifecycleInput): Promise<AgentLifecycleResult> {
   const role = parseRole(input.agent_type);
   if (!role) return {};
-  const { stores, warnings } = await candidateStores(input.cwd ?? process.cwd(), role, input.hook_event_name === "SubagentStop" ? "running" : "queued");
+  const { stores, warnings } = await candidateStores(input.cwd ?? process.cwd(), role, input.hook_event_name === "SubagentStop" ? "running" : "queued", input.hook_event_name === "SubagentStop" ? input.agent_id : undefined);
   if (stores.length === 0) return warnings.length ? { warning: warnings.join("; ") } : {};
   if (stores.length > 1) {
     return { warning: `CDO found ${stores.length} ${role} assignments across workflows. Bind the returned agent ID to the intended assignment explicitly with cdo bind-agent.` };
@@ -35,7 +35,7 @@ export async function handleAgentLifecycle(input: AgentLifecycleInput): Promise<
     : { warning: [result.reason, ...warnings].filter(Boolean).join("; ") };
 }
 
-async function candidateStores(cwd: string, role: AgentRole, status: "queued" | "running"): Promise<{ stores: AssignmentStore[]; warnings: string[] }> {
+async function candidateStores(cwd: string, role: AgentRole, status: "queued" | "running", agentId?: string): Promise<{ stores: AssignmentStore[]; warnings: string[] }> {
   const runtimeRoot = await findRuntimeRoot(cwd);
   if (!runtimeRoot) return { stores: [], warnings: [] };
   const stores: AssignmentStore[] = [];
@@ -47,7 +47,7 @@ async function candidateStores(cwd: string, role: AgentRole, status: "queued" | 
       const state = await new StateStore(projectRoot, entry.name).load();
       if (["needs_human", "complete"].includes(state.status)) continue;
       const store = new AssignmentStore(projectRoot, entry.name);
-      const matches = (await store.load()).assignments.filter((assignment) => assignment.role === role && assignment.status === status);
+      const matches = (await store.load()).assignments.filter((assignment) => assignment.role === role && assignment.status === status && (!agentId || assignment.agentId === agentId));
       if (matches.length === 1) stores.push(store);
     } catch (error) {
       warnings.push(`CDO could not inspect workflow ${entry.name}: ${error instanceof Error ? error.message : String(error)}`);

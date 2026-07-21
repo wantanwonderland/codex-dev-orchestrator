@@ -17,16 +17,17 @@ try {
     "completion_gate",
     "create_agent_assignment",
     "delete_browser_auth_state",
+    "drive_workflow",
     "issue_browser_auth_state",
     "list_agent_assignments",
     "persist_workflow_artifact",
+    "persist_workflow_artifact_bundle",
     "reconcile_agent_assignment",
     "record_agent_failure",
     "record_agent_success",
     "record_brainstorm_decisions",
     "release_writer_lease",
     "resume_workflow",
-    "transition_workflow",
     "workflow_status",
   ];
   const actual = result.tools.map((tool) => tool.name).sort();

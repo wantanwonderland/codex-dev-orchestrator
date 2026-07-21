@@ -8,7 +8,11 @@ import { boundWorktree } from "./worktree.js";
 
 export async function validateWorkflowArtifacts(projectRoot: string, workflowId: string): Promise<string[]> {
   workflowId = WorkflowIdSchema.parse(workflowId);
-  const root = join(projectRoot, ".codex", "workflows", workflowId);
+  let sourceRoot = projectRoot;
+  try { sourceRoot = boundWorktree(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const root = join(sourceRoot, ".codex", "workflows", workflowId);
   const paths = await markdownFiles(root);
   if (!paths.some((path) => path.endsWith("/index.md"))) throw new Error("Workflow index.md is missing");
   for (const path of paths) {

@@ -1,6 +1,6 @@
 {
   "name": "codex-dev-orchestrator",
-  "version": "0.5.0+codex.20260721105248",
+  "version": "0.6.0+codex.20260721112812",
   "description": "Autonomous evidence-led delivery with research, brainstorming, typed recovery, review, and safety gates.",
   "author": {
     "name": "Wantan"
@@ -16,6 +16,6 @@
       "Interactive",
       "Write"
     ],
-    "defaultPrompt": "Use Codex Dev Orchestrator to plan and deliver this change."
+    "defaultPrompt": "Create a persisted goal and use Codex Dev Orchestrator to plan, deliver, verify, and continue this change automatically until it completes or reaches a typed human gate."
   }
 }

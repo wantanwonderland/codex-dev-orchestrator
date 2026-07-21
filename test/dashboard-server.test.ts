@@ -38,7 +38,7 @@ describe("dashboard server", () => {
     try {
       const health = await running.app.inject({ method: "GET", url: "/api/health", headers: { host: "127.0.0.1" } });
       expect(health.statusCode).toBe(200);
-      expect(health.json()).toMatchObject({ ok: true, version: "0.4.0" });
+      expect(health.json()).toMatchObject({ ok: true, version: "0.6.0" });
 
       const settings = await running.app.inject({ method: "GET", url: "/api/settings", headers: { host: "127.0.0.1" } });
       expect(settings.json().roots[0]).toMatchObject({ path: root, projects: 2 });

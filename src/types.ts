@@ -44,6 +44,12 @@ export const WriterLeaseSchema = z.object({
   acquiredAt: z.string().datetime(),
 });
 
+export const DriverLeaseSchema = z.object({
+  sessionId: z.string().min(1),
+  acquiredAt: z.string().datetime(),
+  heartbeatAt: z.string().datetime(),
+});
+
 export const WorkflowBindingSchema = z.object({
   worktreePath: z.string().min(1),
   branch: z.string().min(1),
@@ -88,6 +94,7 @@ export const WorkflowStateSchema = z.object({
   tasks: z.array(WorkflowTaskSchema).default([]),
   activeTaskId: z.string().optional(),
   writerLease: WriterLeaseSchema.optional(),
+  driverLease: DriverLeaseSchema.optional(),
   operationFailures: z.record(z.number().int().min(0)).default({}),
   humanGate: z.object({
     kind: HumanGateKindSchema,
@@ -103,6 +110,7 @@ export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 export type WorkflowStatus = z.infer<typeof WorkflowStatusSchema>;
 export type WriterRole = z.infer<typeof WriterRoleSchema>;
 export type WriterLease = z.infer<typeof WriterLeaseSchema>;
+export type DriverLease = z.infer<typeof DriverLeaseSchema>;
 export type WorkflowTask = z.infer<typeof WorkflowTaskSchema>;
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 

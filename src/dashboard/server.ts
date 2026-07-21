@@ -97,7 +97,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
   });
 
-  app.get("/api/health", async () => ({ ok: true, version: "0.4.0", lastEventAt }));
+  app.get("/api/health", async () => ({ ok: true, version: "0.6.0", lastEventAt }));
   app.get("/api/overview", async () => {
     const projects = database.listProjects().map((project) => projectSummary(database, project));
     const rateLimits = await queryCodexRateLimits();

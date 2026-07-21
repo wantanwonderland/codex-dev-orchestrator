@@ -2,14 +2,14 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { acquireLease, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, recordAgentFailure, recordAgentSuccess, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary } from "./workflow.js";
+import { acquireLease, bindAgentAssignment, createAgentAssignment, driveWorkflow, listAgentAssignments, reconcileAgentAssignment, recordAgentFailure, recordAgentSuccess, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary } from "./workflow.js";
 import { classifyRisk } from "./risk.js";
 import { issueBrowserAuthState, deleteBrowserAuthState } from "./credentials.js";
 import { assessCompletionGate } from "./gates.js";
 import { persistWorkflowArtifact, persistWorkflowArtifactBundle } from "./artifacts.js";
 
 const server = new McpServer(
-  { name: "codex-dev-orchestrator", version: "0.5.0" },
+  { name: "codex-dev-orchestrator", version: "0.6.0" },
   {
     instructions:
       "Continue autonomously from research through verification. Normal and large workflows require repository plus live-web research and interactive brainstorming before planning. Decompose plans into ready task briefs, reconcile cdo/v2 typed outcomes, and recover through continuation, diagnosis, task splitting, or replanning. Ask a human only for typed product, safety, credential, destructive, production, merge, or external-blocker gates. Only a leased executor or fixer may mutate source.",
@@ -22,6 +22,7 @@ const additive = { readOnlyHint: false, destructiveHint: false, idempotentHint: 
 const destructive = { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false } as const;
 
 server.registerTool("workflow_status", { description: "Read durable workflow status before routing work.", inputSchema: { projectRoot: z.string(), workflowId: z.string() }, annotations: readOnly }, async ({ projectRoot, workflowId }) => text(await statusSummary(projectRoot, workflowId)));
+server.registerTool("drive_workflow", { description: "Advance stopped or reconciling assignments until Codex must spawn, wait, request a human decision, or complete. Set noLiveAgents only after Codex confirms no child remains for a running assignment.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), sessionId: z.string().optional(), noLiveAgents: z.boolean().optional() }, annotations: additive }, async (input) => text(await driveWorkflow(input.projectRoot, input.workflowId, input.sessionId, input.noLiveAgents)));
 server.registerTool("create_agent_assignment", { description: "Register a durable role assignment before spawning a native Codex subagent.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), operationKey: z.string(), role: z.enum(["researcher", "planner", "executor", "reviewer", "fixer", "browser-verifier"]), stage: z.enum(["research", "planning", "implementation", "diagnosis", "task_review", "phase_review", "remediation", "browser_verification"]), taskId: z.string().optional(), inputPath: z.string(), outputPath: z.string(), expectedKind: z.enum(["research", "plan", "task-brief", "executor-report", "review", "diagnosis", "browser-report"]), sourceCommit: z.string().optional(), targetCommit: z.string().optional() }, annotations: additive }, async (input) => text(await createAgentAssignment(input.projectRoot, input.workflowId, input)));
 server.registerTool("list_agent_assignments", { description: "List durable assignment and handoff state for a workflow.", inputSchema: { projectRoot: z.string(), workflowId: z.string() }, annotations: readOnly }, async (input) => text(await listAgentAssignments(input.projectRoot, input.workflowId)));
 server.registerTool("bind_agent_assignment", { description: "Explicitly bind a native subagent ID to one durable assignment when lifecycle hook routing is ambiguous or needs recovery.", inputSchema: { projectRoot: z.string(), workflowId: z.string(), assignmentId: z.string().uuid(), event: z.enum(["start", "stop"]), agentId: z.string().min(1), stopReason: z.string().optional() }, annotations: additive }, async (input) => text(await bindAgentAssignment(input.projectRoot, input.workflowId, input.assignmentId, input.event, input.agentId, input.stopReason)));

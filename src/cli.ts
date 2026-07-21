@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { resolve } from "node:path";
 import { initializeProject, resetProject, startWorkflow, upgradeProject } from "./project.js";
-import { acquireLease, adoptWorkflowWorktree, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary } from "./workflow.js";
+import { acquireLease, adoptWorkflowWorktree, bindAgentAssignment, createAgentAssignment, driveWorkflow, listAgentAssignments, reconcileAgentAssignment, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary } from "./workflow.js";
 import { AgentRoleSchema, ArtifactKindSchema, AssignmentStageSchema, WorkflowModeSchema, WorkflowTierSchema } from "./types.js";
 import { classifyRisk } from "./risk.js";
 import { validateWorkflowArtifacts } from "./artifacts.js";
@@ -21,7 +21,7 @@ function rootOf(options: { root?: string }): string {
 }
 
 const program = new Command();
-program.name("cdo").description("Autonomous, durable Codex development orchestration").version("0.5.0");
+program.name("cdo").description("Autonomous, durable Codex development orchestration").version("0.6.0");
 
 async function serveDashboard(options: { open?: boolean; port?: string }): Promise<void> {
   const config = await loadDashboardConfig();
@@ -196,6 +196,18 @@ program
   .option("--root <path>")
   .action(async (workflowId, assignmentId, options) => {
     console.log(JSON.stringify(await reconcileAgentAssignment(rootOf(options), workflowId, assignmentId), null, 2));
+  });
+
+program
+  .command("drive")
+  .argument("<workflow-id>")
+  .option("--session <session-id>", "Codex parent session ID")
+  .option("--no-live-agents", "recover a running assignment after Codex confirms no child remains")
+  .option("--root <path>")
+  .option("--json")
+  .action(async (workflowId, options) => {
+    const result = await driveWorkflow(rootOf(options), workflowId, options.session, options.noLiveAgents);
+    console.log(options.json ? JSON.stringify(result, null, 2) : `${result.action}${"nextAction" in result ? `: ${result.nextAction}` : ""}`);
   });
 
 program

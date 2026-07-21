@@ -78,7 +78,7 @@ function query(timeoutMs: number): Promise<{ available: boolean; limits: Dashboa
     child.stdin.write(`${JSON.stringify({
       method: "initialize",
       id: 1,
-      params: { clientInfo: { name: "cdo-dashboard", title: "CDO Dashboard", version: "0.4.0" }, capabilities: null },
+      params: { clientInfo: { name: "cdo-dashboard", title: "CDO Dashboard", version: "0.6.0" }, capabilities: null },
     })}\n`);
   });
 }

@@ -2,7 +2,7 @@
 
 Codex Dev Orchestrator (CDO) is an autonomous, durable software-delivery plugin for Codex. It gives a coordinator a real state machine, repository-local evidence, role-specific fresh agents, exclusive writer leases, independent review, and live browser verification.
 
-CDO 0.5 removes routine approval pauses and starts every new workflow in a dedicated Git worktree. A workflow continues by itself through research, planning, implementation, diagnosis, remediation, and verification. It asks a human only when judgment or authority genuinely cannot be delegated.
+CDO 0.6 starts every workflow in a dedicated Git worktree and uses a persisted Codex goal to continue automatically through research, planning, implementation, diagnosis, remediation, and verification. It asks a human only when judgment or authority genuinely cannot be delegated.
 
 ## Flow
 
@@ -109,7 +109,7 @@ cdo assign WORKFLOW --operation research --role researcher --stage research \
 
 cdo bind-agent WORKFLOW ASSIGNMENT --event start --agent NATIVE_AGENT_ID
 cdo bind-agent WORKFLOW ASSIGNMENT --event stop --agent NATIVE_AGENT_ID
-cdo reconcile WORKFLOW ASSIGNMENT
+cdo drive WORKFLOW --session CODEX_PARENT_SESSION_ID --json
 
 # After decisions.md is persisted with status: ready
 cdo record-decisions WORKFLOW
@@ -118,7 +118,7 @@ cdo record-decisions WORKFLOW
 cdo resume WORKFLOW --to executing
 ```
 
-MCP exposes equivalent operations, plus atomic artifact persistence, completion gates, risk classification, browser-auth handling, and failure/success recording.
+Use the plugin's automatic-delivery prompt to create a persisted Codex goal. The coordinator calls `drive` after every child lifecycle event and follows its `spawn`, `wait`, `route`, `human_gate`, or `complete` action. MCP exposes the equivalent `drive_workflow` operation, plus atomic artifact persistence, completion gates, risk classification, browser-auth handling, and failure/success recording.
 
 ## Typed agent outcomes
 

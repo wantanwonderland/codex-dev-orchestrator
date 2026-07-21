@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { renderArtifact } from "../src/frontmatter.js";
 import { StateStore } from "../src/state-store.js";
-import { acquireLease, createAgentAssignment, reconcileAgentAssignment, recordAgentFailure, releaseLease } from "../src/workflow.js";
+import { acquireLease, createAgentAssignment, driveWorkflow, reconcileAgentAssignment, recordAgentFailure, releaseLease } from "../src/workflow.js";
 import { AssignmentStore } from "../src/assignments.js";
 
 const now = "2026-07-21T00:00:00.000Z";
@@ -38,6 +38,37 @@ describe("autonomous assignment reconciliation", () => {
     const { root } = await setup("executing");
     const { result } = await completeExecutor(root);
     expect(result).toMatchObject({ nextAction: "assign_task_reviewer", state: { status: "reviewing", tasks: [{ status: "reviewing" }] }, assignment: { status: "reconciled" } });
+  });
+
+  it("drives a stopped writer through lease release and reconciliation without a coordinator prompt", async () => {
+    const { root } = await setup("executing");
+    const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "task-1", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/task-1.md", expectedKind: "executor-report" });
+    const assignments = new AssignmentStore(root, "wf-1");
+    await assignments.bindStartedById(assignment.id, "agent-1");
+    await acquireLease(root, "wf-1", "executor", "driver-1");
+    await writeFile(join(root, ".codex/workflows/wf-1/reports/task-1.md"), renderArtifact({ schema: "cdo/v2", kind: "executor-report", workflow_id: "wf-1", task: "task-1", status: "complete", created_at: now, updated_at: now, assignment_id: assignment.id, operation_key: assignment.operationKey, agent_role: "executor" }, "# Handoff"));
+    await assignments.bindStoppedById(assignment.id, "agent-1", "complete");
+
+    const driven = await driveWorkflow(root, "wf-1", "driver-1");
+    expect(driven).toMatchObject({ action: "route", nextAction: "assign_task_reviewer", state: { status: "reviewing" } });
+    expect((await assignments.get(assignment.id)).status).toBe("reconciled");
+  });
+
+  it("does not allow two sessions to drive the same workflow", async () => {
+    const { root } = await setup("executing");
+    await driveWorkflow(root, "wf-1", "driver-1");
+    await expect(driveWorkflow(root, "wf-1", "driver-2")).rejects.toThrow(/already driven/);
+  });
+
+  it("recovers a running assignment only when Codex confirms that no child remains", async () => {
+    const { root } = await setup("executing");
+    const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "orphan", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/orphan.md", expectedKind: "executor-report" });
+    const assignments = new AssignmentStore(root, "wf-1");
+    await assignments.bindStartedById(assignment.id, "agent-orphan");
+    expect((await driveWorkflow(root, "wf-1", "driver-1")).action).toBe("wait");
+    const recovered = await driveWorkflow(root, "wf-1", "driver-1", true);
+    expect(recovered).toMatchObject({ action: "route", nextAction: "retry_executor" });
+    expect(await assignments.get(assignment.id)).toMatchObject({ status: "failed", error: "No live Codex subagent exists for a running assignment" });
   });
 
   it("continues partial work without human approval", async () => {

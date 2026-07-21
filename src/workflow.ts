@@ -19,6 +19,71 @@ export async function adoptWorkflowWorktree(projectRoot: string, workflowId: str
   return store.save({ ...state, schema: "cdo-state/v3", worktree: binding }, "workflow.worktree_adopted", binding);
 }
 
+export type DriveResult =
+  | { action: "spawn"; assignment: AgentAssignment; state: WorkflowState }
+  | { action: "wait"; assignment: AgentAssignment; state: WorkflowState }
+  | { action: "route"; nextAction: string; state: WorkflowState }
+  | { action: "human_gate"; reason: string; state: WorkflowState }
+  | { action: "complete"; state: WorkflowState };
+
+const DRIVER_STALE_MS = 5 * 60_000;
+
+/**
+ * Advance all deterministic lifecycle work until Codex must either spawn, wait,
+ * make a product decision, or declare the workflow complete.  Goal-mode
+ * coordinators call this after every child event instead of relying on prose.
+ */
+export async function driveWorkflow(projectRoot: string, workflowId: string, sessionId?: string, noLiveAgents = false): Promise<DriveResult> {
+  if (sessionId?.startsWith("/")) throw new Error("Workflow driver requires the Codex parent session ID, not an agent routing path");
+  const store = new StateStore(projectRoot, workflowId);
+  let state = await store.load();
+  if (sessionId) state = await claimDriver(store, state, sessionId);
+  let routedNextAction: string | undefined;
+
+  for (let steps = 0; steps < 16; steps += 1) {
+    const root = boundWorktree(state, projectRoot);
+    const assignments = new AssignmentStore(root, workflowId);
+    const ledger = await assignments.load();
+    const active = ledger.assignments.filter((assignment) => ["queued", "running", "stopped", "reconciling"].includes(assignment.status));
+    const pending = active.find((assignment) => assignment.status === "stopped") ?? active.find((assignment) => assignment.status === "reconciling");
+    if (pending) {
+      if (pending.status === "stopped" && sessionId && state.writerLease?.sessionId === sessionId) state = await releaseLease(projectRoot, workflowId, sessionId);
+      const reconciled = await reconcileAgentAssignment(projectRoot, workflowId, pending.id);
+      routedNextAction = reconciled.nextAction;
+      state = await store.load();
+      continue;
+    }
+    const queued = active.find((assignment) => assignment.status === "queued");
+    if (queued) return { action: "spawn", assignment: queued, state };
+    const running = active.find((assignment) => assignment.status === "running");
+    if (running && noLiveAgents) {
+      if (sessionId && state.writerLease?.sessionId === sessionId) state = await releaseLease(projectRoot, workflowId, sessionId);
+      await recordAgentFailure(projectRoot, workflowId, running.operationKey, "No live Codex subagent exists for a running assignment", "agent_runtime", running);
+      state = await store.load();
+      routedNextAction = `retry_${running.role}`;
+      continue;
+    }
+    if (running) return { action: "wait", assignment: running, state };
+    if (state.status === "needs_human") return { action: "human_gate", reason: state.humanGate?.reason ?? "Human decision required", state: sessionId ? await releaseDriver(store, state, sessionId) : state };
+    if (state.status === "complete") return { action: "complete", state: sessionId ? await releaseDriver(store, state, sessionId) : state };
+    return { action: "route", nextAction: routedNextAction ?? nextAction(state, [], ledger.assignments.at(-1)), state };
+  }
+  throw new Error("Workflow driver exceeded deterministic reconciliation limit");
+}
+
+async function claimDriver(store: StateStore, state: WorkflowState, sessionId: string): Promise<WorkflowState> {
+  const existing = state.driverLease;
+  const stale = existing && Date.now() - Date.parse(existing.heartbeatAt) > DRIVER_STALE_MS;
+  if (existing && existing.sessionId !== sessionId && !stale) throw new Error(`Workflow is already driven by session ${existing.sessionId}`);
+  const now = new Date().toISOString();
+  return store.save({ ...state, driverLease: existing ? { ...existing, heartbeatAt: now } : { sessionId, acquiredAt: now, heartbeatAt: now } }, "workflow.driver_heartbeat", { sessionId });
+}
+
+async function releaseDriver(store: StateStore, state: WorkflowState, sessionId: string): Promise<WorkflowState> {
+  if (state.driverLease?.sessionId !== sessionId) return state;
+  return store.save({ ...state, driverLease: undefined }, "workflow.driver_released", { sessionId });
+}
+
 export async function acquireLease(projectRoot: string, workflowId: string, role: string, sessionId: string) {
   const store = new StateStore(projectRoot, workflowId);
   const state = await store.load();

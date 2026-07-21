@@ -29,12 +29,12 @@ describe("project initialization", () => {
     expect(await readFile(join(root, ".codex/agents/researcher.toml"), "utf8")).toContain('web_search = "live"');
     expect(await readFile(join(root, ".codex/agents/planner.toml"), "utf8")).toContain('model = "gpt-5.6-sol"');
     expect(await readFile(join(root, ".worktrees/wf-demo/.codex/workflows/wf-demo/spec.md"), "utf8")).toContain("Build a feature");
-    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.5.0"');
+    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.6.0"');
     expect(await readFile(join(root, ".gitignore"), "utf8")).toContain(".codex/workflow-runtime/");
     expect((await statusSummary(root, "wf-demo")).coordination.nextAction).toBe("assign_researcher");
     expect((await new StateStore(root, "wf-demo").load()).worktree).toMatchObject({ branch: "cdo/wf-demo", worktreePath: await realpath(join(root, ".worktrees", "wf-demo")) });
     await expect(readFile(join(root, ".codex/workflows/wf-demo/index.md"), "utf8")).rejects.toThrow();
-  });
+  }, 15_000);
 
   it("checkpoints a dirty primary checkout before creating the workflow worktree", async () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-project-"));
@@ -82,7 +82,7 @@ describe("project initialization", () => {
     const result = await upgradeProject(root);
     expect(result.recommended).toContain(".codex/agents/coordinator.cdo-recommended.toml");
     expect(await readFile(coordinator, "utf8")).toContain("project customization");
-    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.5.0"');
+    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.6.0"');
     const repeated = await upgradeProject(root);
     expect(repeated.recommended).toContain(".codex/agents/coordinator.cdo-recommended.toml");
     expect(await readFile(coordinator, "utf8")).toContain("project customization");

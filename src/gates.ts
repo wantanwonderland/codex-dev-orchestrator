@@ -4,6 +4,8 @@ import { parseArtifact } from "./frontmatter.js";
 import { classifyRisk } from "./risk.js";
 import { run } from "./process.js";
 import { WorkflowIdSchema } from "./types.js";
+import { StateStore } from "./state-store.js";
+import { boundWorktree } from "./worktree.js";
 
 export async function assessCompletionGate(projectRoot: string, workflowId: string): Promise<{
   ready: boolean;
@@ -11,7 +13,11 @@ export async function assessCompletionGate(projectRoot: string, workflowId: stri
   customerVisibleUi: boolean;
 }> {
   workflowId = WorkflowIdSchema.parse(workflowId);
-  const root = join(projectRoot, ".codex", "workflows", workflowId);
+  let sourceRoot = projectRoot;
+  try { sourceRoot = boundWorktree(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const root = join(sourceRoot, ".codex", "workflows", workflowId);
   const planningText = await readAvailable([
     join(root, "index.md"),
     join(root, "spec.md"),
@@ -20,7 +26,7 @@ export async function assessCompletionGate(projectRoot: string, workflowId: stri
   ]);
   if (!planningText.length) throw new Error("Workflow planning artifacts are missing");
   const customerVisibleUi = classifyRisk(planningText).triggers.includes("customer-visible UI");
-  const head = await currentHead(projectRoot);
+  const head = await currentHead(sourceRoot);
   const missing: string[] = [];
   if (!(await isPassed(join(root, "reviews", "phase-final.md"), "review", head))) missing.push("passed whole-phase review");
   if (customerVisibleUi && !(await isPassed(join(root, "browser", "report.md"), "browser-report", head))) {
