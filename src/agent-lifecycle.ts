@@ -45,7 +45,7 @@ async function candidateStores(cwd: string, role: AgentRole, status: "queued" | 
     const projectRoot = dirname(dirname(runtimeRoot));
     try {
       const state = await new StateStore(projectRoot, entry.name).load();
-      if (["blocked", "complete"].includes(state.status)) continue;
+      if (["needs_human", "complete"].includes(state.status)) continue;
       const store = new AssignmentStore(projectRoot, entry.name);
       const matches = (await store.load()).assignments.filter((assignment) => assignment.role === role && assignment.status === status);
       if (matches.length === 1) stores.push(store);

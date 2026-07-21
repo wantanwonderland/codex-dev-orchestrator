@@ -4,7 +4,7 @@ import type { GovernanceContext } from "./hook-policy.js";
 import { WorkflowStateSchema } from "./types.js";
 import { workflowRuntimeRoot } from "./project-root.js";
 
-const TERMINAL_STATUSES = new Set(["blocked", "complete"]);
+const TERMINAL_STATUSES = new Set(["needs_human", "complete"]);
 
 export async function findRelevantGovernance(cwd: string, sessionId?: string): Promise<GovernanceContext> {
   const runtimeRoot = await findRuntimeRoot(cwd);

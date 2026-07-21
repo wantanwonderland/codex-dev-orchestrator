@@ -20,7 +20,7 @@ if (input.hook_event_name === "SubagentStart" || input.hook_event_name === "Suba
       : "";
     const action = input.hook_event_name === "SubagentStop"
       ? `Assignment ${result.assignment.id} stopped. Coordinator: persist the expected ${result.assignment.expectedKind} at ${result.assignment.outputPath}, run reconcile_agent_assignment, then route its returned nextAction.`
-      : `CDO assignment ${result.assignment.id} is active for ${result.assignment.operationKey}. Produce ${result.assignment.expectedKind} at ${result.assignment.outputPath} and include the assignment metadata in cdo/v1 front matter.${writerIdentity}`;
+      : `CDO assignment ${result.assignment.id} is active for ${result.assignment.operationKey}. Produce ${result.assignment.expectedKind} at ${result.assignment.outputPath} and include the assignment metadata in cdo/v2 front matter.${writerIdentity}`;
     process.stdout.write(JSON.stringify({ systemMessage: action }));
   } else if (result.warning) {
     process.stdout.write(JSON.stringify({ systemMessage: result.warning }));

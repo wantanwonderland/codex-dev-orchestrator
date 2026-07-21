@@ -12,8 +12,8 @@ async function createWorktreeProject(path: string, gitDir: string, id: string): 
   await writeFile(join(path, ".git"), `gitdir: ${gitDir}\n`);
   await writeFile(join(gitDir, "commondir"), "../..\n");
   await writeFile(join(path, ".codex", "workflow.toml"), `[project]\nid = "${id}"\ndefault_branch = "main"\n`);
-  await writeFile(join(path, ".codex", "workflows", "wf-1", "index.md"), "---\nschema: cdo/v1\nkind: index\nworkflow_id: wf-1\nstatus: approved\ncreated_at: 2026-07-20T00:00:00.000Z\nupdated_at: 2026-07-20T01:00:00.000Z\n---\nSECRET PROMPT BODY MUST NOT BE INDEXED\n");
-  await writeFile(join(path, ".codex", "workflows", "wf-1", "tasks", "task-1.md"), "---\nschema: cdo/v1\nkind: task-brief\nworkflow_id: wf-1\ntask: task-1\nstatus: in_progress\ncreated_at: 2026-07-20T00:00:00.000Z\nupdated_at: 2026-07-20T02:00:00.000Z\n---\nPRIVATE TOOL OUTPUT\n");
+  await writeFile(join(path, ".codex", "workflows", "wf-1", "index.md"), "---\nschema: cdo/v2\nkind: index\nworkflow_id: wf-1\nstatus: approved\ncreated_at: 2026-07-20T00:00:00.000Z\nupdated_at: 2026-07-20T01:00:00.000Z\n---\nSECRET PROMPT BODY MUST NOT BE INDEXED\n");
+  await writeFile(join(path, ".codex", "workflows", "wf-1", "tasks", "task-1.md"), "---\nschema: cdo/v2\nkind: task-brief\nworkflow_id: wf-1\ntask: task-1\nstatus: in_progress\ncreated_at: 2026-07-20T00:00:00.000Z\nupdated_at: 2026-07-20T02:00:00.000Z\n---\nPRIVATE TOOL OUTPUT\n");
   await writeFile(join(path, ".codex", "workflow-runtime", "wf-1", "state.json"), JSON.stringify({ status: "executing", phase: "phase-2", updatedAt: "2026-07-20T03:00:00.000Z" }));
   await writeFile(join(path, ".codex", "workflow-runtime", "wf-1", "sessions.json"), JSON.stringify({ assignments: [{ id: "a-1", operationKey: "task-1", role: "executor", stage: "implementation", expectedKind: "executor-report", status: "running", assignedAt: "2026-07-20T02:30:00.000Z" }] }));
   await writeFile(join(path, ".codex", "workflow-runtime", "wf-1", "events.jsonl"), `${JSON.stringify({ at: "2026-07-20T03:00:00.000Z", type: "execution.started", detail: { status: "executing", prompt: "DO NOT STORE" } })}\nnot-json\n`);
@@ -29,7 +29,7 @@ describe("dashboard project scanner", () => {
     await createWorktreeProject(first, join(common, "worktrees", "one"), "demo-one");
     await createWorktreeProject(second, join(common, "worktrees", "two"), "demo-two");
     await mkdir(join(second, ".codex", "workflows", "wf-2"), { recursive: true });
-    await writeFile(join(second, ".codex", "workflows", "wf-2", "index.md"), "---\nschema: cdo/v1\nkind: index\nworkflow_id: wf-2\nstatus: draft\nupdated_at: 2026-07-21T00:00:00.000Z\n---\n");
+    await writeFile(join(second, ".codex", "workflows", "wf-2", "index.md"), "---\nschema: cdo/v2\nkind: index\nworkflow_id: wf-2\nstatus: draft\nupdated_at: 2026-07-21T00:00:00.000Z\n---\n");
     const database = new DashboardDatabase({ databasePath: join(root, "dashboard.sqlite") });
     database.registerRoot(join(root, "projects"));
 
@@ -77,6 +77,22 @@ describe("dashboard project scanner", () => {
     const result = await scanRegisteredRoots(database, { maxDirectories: 1 });
     expect(result).toMatchObject({ rootsScanned: 2, projectsStored: 2, truncated: false });
     expect(database.listProjects()).toHaveLength(2);
+    database.close();
+  });
+
+  it("discovers Git repositories that do not yet have CDO workflow metadata", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cdo-dashboard-git-project-"));
+    const project = join(root, "repository-only");
+    await mkdir(join(project, ".git"), { recursive: true });
+    const database = new DashboardDatabase({ databasePath: join(root, "dashboard.sqlite") });
+    database.registerRoot(root);
+
+    const result = await scanRegisteredRoots(database, { maxDirectories: 10 });
+
+    expect(result).toMatchObject({ projectsFound: 1, projectsStored: 1, truncated: false });
+    expect(database.listProjects()).toHaveLength(1);
+    expect(database.listProjects()[0]).toMatchObject({ name: "repository-only", path: project, projectKey: null });
+    expect(database.listWorkflows()).toEqual([]);
     database.close();
   });
 });

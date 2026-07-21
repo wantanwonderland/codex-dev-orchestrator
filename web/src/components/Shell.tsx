@@ -24,7 +24,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {nav.map(({ to, label, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={() => setOpen(false)}><Icon size={17} /><span>{label}</span></NavLink>)}
       </nav>
       <div className="sidebar__footer">
-        <div className="version"><span>CDO Console</span><strong>v0.3.0</strong></div>
+        <div className="version"><span>CDO Console</span><strong>v0.4.0</strong></div>
         <div className="monitor-only"><Radio size={14} /><span><strong>Monitor only</strong>Workflow state is read-only</span></div>
       </div>
     </aside>

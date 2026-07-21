@@ -23,7 +23,7 @@ describe("canonical workflow runtime root", () => {
     await run("git", ["-C", root, "worktree", "add", "-b", "feature", worktree]);
 
     const mainStore = new StateStore(root, "wf-1");
-    await mainStore.create({ objective: "shared runtime", tier: "normal", mode: "human_gated" });
+    await mainStore.create({ objective: "shared runtime", tier: "normal", mode: "autonomous" });
     const worktreeStore = new StateStore(worktree, "wf-1");
 
     const physicalRoot = await realpath(root);

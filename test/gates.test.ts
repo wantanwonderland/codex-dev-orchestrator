@@ -22,14 +22,14 @@ describe("completion gate", () => {
     await writeFile(
       join(workflow, "reviews/phase-final.md"),
       renderArtifact(
-        { schema: "cdo/v1", kind: "review", workflow_id: "wf-ui", status: "passed", created_at: now, updated_at: now },
+        { schema: "cdo/v2", kind: "review", workflow_id: "wf-ui", status: "passed", created_at: now, updated_at: now },
         "# GO",
       ),
     );
     await writeFile(
       join(workflow, "browser/report.md"),
       renderArtifact(
-        { schema: "cdo/v1", kind: "browser-report", workflow_id: "wf-ui", status: "passed", created_at: now, updated_at: now },
+        { schema: "cdo/v2", kind: "browser-report", workflow_id: "wf-ui", status: "passed", created_at: now, updated_at: now },
         "# Browser evidence",
       ),
     );

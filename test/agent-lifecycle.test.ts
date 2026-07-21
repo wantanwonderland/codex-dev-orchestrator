@@ -11,7 +11,7 @@ describe("subagent lifecycle hooks", () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-lifecycle-"));
     await mkdir(join(root, ".codex/workflows/wf-1/tasks"), { recursive: true });
     await writeFile(join(root, ".codex/workflows/wf-1/tasks/task-1.md"), "task");
-    await new StateStore(root, "wf-1").create({ objective: "ship", tier: "normal", mode: "local_auto" });
+    await new StateStore(root, "wf-1").create({ objective: "ship", tier: "normal", mode: "autonomous" });
     const assignments = new AssignmentStore(root, "wf-1");
     const queued = await assignments.create({
       operationKey: "task-1",

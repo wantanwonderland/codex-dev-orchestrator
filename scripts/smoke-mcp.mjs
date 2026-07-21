@@ -23,7 +23,9 @@ try {
     "reconcile_agent_assignment",
     "record_agent_failure",
     "record_agent_success",
+    "record_brainstorm_decisions",
     "release_writer_lease",
+    "resume_workflow",
     "transition_workflow",
     "workflow_status",
   ];

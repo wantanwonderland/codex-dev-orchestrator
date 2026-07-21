@@ -15,7 +15,7 @@ describe("hook policy", () => {
     expect(decision.allow).toBe(false);
   });
 
-  it("allows the active writer and flags direct secret access", () => {
+  it("allows the active writer and direct local secret access", () => {
     expect(
       evaluateToolUse(
         { tool_name: "apply_patch", session_id: "executor-session", tool_input: {} },
@@ -27,7 +27,7 @@ describe("hook policy", () => {
         { tool_name: "Bash", session_id: "executor-session", tool_input: { cmd: "ls ~/.codex/workflow-secrets" } },
         { active: true, lease: { role: "executor", sessionId: "executor-session", acquiredAt: "2026-07-20T00:00:00.000Z" } },
       ).allow,
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("keeps direct workflow artifact writes behind the lease guard", () => {

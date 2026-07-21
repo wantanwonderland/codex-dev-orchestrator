@@ -1,30 +1,37 @@
 import { z } from "zod";
 
 export const WorkflowTierSchema = z.enum(["small", "normal", "large"]);
-export const WorkflowModeSchema = z.enum(["human_gated", "local_auto", "remote_auto"]);
+export const WorkflowModeSchema = z.enum(["autonomous", "remote_auto"]);
 export const WorkflowIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]*$/);
 export const WorkflowStatusSchema = z.enum([
-  "draft_plan",
-  "awaiting_plan_approval",
+  "discovering",
+  "brainstorming",
+  "planning",
   "executing",
+  "diagnosing",
   "reviewing",
   "remediating",
   "browser_verification",
-  "blocked",
+  "needs_human",
   "complete",
 ]);
 export const WriterRoleSchema = z.enum(["executor", "fixer"]);
-export const AgentRoleSchema = z.enum(["planner", "executor", "reviewer", "fixer", "browser-verifier"]);
+export const AgentRoleSchema = z.enum(["researcher", "planner", "executor", "reviewer", "fixer", "browser-verifier"]);
 export const AssignmentStageSchema = z.enum([
+  "research",
   "planning",
   "implementation",
+  "diagnosis",
   "task_review",
   "phase_review",
   "remediation",
   "browser_verification",
 ]);
-export const AssignmentStatusSchema = z.enum(["queued", "running", "stopped", "reconciling", "reconciled", "failed", "blocked"]);
-export const AssignmentOutcomeSchema = z.enum(["succeeded", "retry", "blocked"]);
+export const AssignmentStatusSchema = z.enum(["queued", "running", "stopped", "reconciling", "reconciled", "failed", "needs_human"]);
+export const AssignmentOutcomeSchema = z.enum(["succeeded", "continue", "retry", "replan", "needs_human"]);
+export const TaskRiskSchema = z.enum(["normal", "high"]);
+export const TaskStatusSchema = z.enum(["pending", "ready", "running", "partial", "reviewing", "remediating", "complete"]);
+export const HumanGateKindSchema = z.enum(["product_decision", "scope_expansion", "credentials", "destructive_action", "production", "merge", "external_blocker"]);
 
 export const WriterLeaseSchema = z.object({
   role: WriterRoleSchema,
@@ -32,8 +39,22 @@ export const WriterLeaseSchema = z.object({
   acquiredAt: z.string().datetime(),
 });
 
+export const WorkflowTaskSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]*$/),
+  title: z.string().min(1),
+  path: z.string().min(1),
+  dependsOn: z.array(z.string()).default([]),
+  risk: TaskRiskSchema.default("normal"),
+  reviewRequired: z.boolean().default(false),
+  customerVisibleUi: z.boolean().default(false),
+  status: TaskStatusSchema.default("pending"),
+  attempts: z.number().int().min(0).default(0),
+  consecutiveNoProgress: z.number().int().min(0).default(0),
+  lastFailureFingerprint: z.string().optional(),
+});
+
 export const WorkflowStateSchema = z.object({
-  schema: z.literal("cdo-state/v1"),
+  schema: z.literal("cdo-state/v2"),
   workflowId: WorkflowIdSchema,
   projectRoot: z.string().min(1),
   objective: z.string().min(1),
@@ -42,17 +63,18 @@ export const WorkflowStateSchema = z.object({
   status: WorkflowStatusSchema,
   phase: z.string().default("phase-1"),
   branch: z.string().optional(),
-  planApproval: z
-    .object({
-      approvedBy: z.string().min(1),
-      approvedAt: z.string().datetime(),
-      planSha256: z.string().regex(/^[a-f0-9]{64}$/),
-    })
-    .optional(),
+  researchComplete: z.boolean().default(false),
+  decisionsComplete: z.boolean().default(false),
+  planRevision: z.number().int().min(0).default(0),
+  tasks: z.array(WorkflowTaskSchema).default([]),
+  activeTaskId: z.string().optional(),
   writerLease: WriterLeaseSchema.optional(),
-  retryCount: z.number().int().min(0).max(1).default(0),
-  remediationRounds: z.number().int().min(0).max(2).default(0),
-  operationFailures: z.record(z.number().int().min(0).max(2)).default({}),
+  operationFailures: z.record(z.number().int().min(0)).default({}),
+  humanGate: z.object({
+    kind: HumanGateKindSchema,
+    reason: z.string().min(1),
+    requestedAt: z.string().datetime(),
+  }).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -62,10 +84,13 @@ export type WorkflowMode = z.infer<typeof WorkflowModeSchema>;
 export type WorkflowStatus = z.infer<typeof WorkflowStatusSchema>;
 export type WriterRole = z.infer<typeof WriterRoleSchema>;
 export type WriterLease = z.infer<typeof WriterLeaseSchema>;
+export type WorkflowTask = z.infer<typeof WorkflowTaskSchema>;
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
 export const ArtifactKindSchema = z.enum([
   "index",
+  "research",
+  "decisions",
   "spec",
   "plan",
   "phase-plan",
@@ -75,13 +100,28 @@ export const ArtifactKindSchema = z.enum([
   "browser-report",
 ]);
 
+export const ArtifactStatusSchema = z.enum([
+  "draft",
+  "ready",
+  "in_progress",
+  "partial",
+  "needs_context",
+  "retryable_failure",
+  "needs_replan",
+  "external_blocker",
+  "safety_gate",
+  "passed",
+  "failed",
+  "complete",
+]);
+
 export const ArtifactFrontmatterSchema = z.object({
-  schema: z.literal("cdo/v1"),
+  schema: z.literal("cdo/v2"),
   kind: ArtifactKindSchema,
   workflow_id: z.string().min(1),
   phase: z.string().optional(),
   task: z.string().optional(),
-  status: z.enum(["draft", "awaiting_approval", "approved", "in_progress", "blocked", "passed", "failed", "complete"]),
+  status: ArtifactStatusSchema,
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
   source_commit: z.string().optional(),
@@ -89,9 +129,14 @@ export const ArtifactFrontmatterSchema = z.object({
   assignment_id: z.string().uuid().optional(),
   operation_key: z.string().min(1).optional(),
   agent_role: AgentRoleSchema.optional(),
+  depends_on: z.array(z.string()).optional(),
+  risk: TaskRiskSchema.optional(),
+  review_required: z.boolean().optional(),
+  customer_visible_ui: z.boolean().optional(),
 });
 
 export type ArtifactFrontmatter = z.infer<typeof ArtifactFrontmatterSchema>;
+export type ArtifactStatus = z.infer<typeof ArtifactStatusSchema>;
 export type ArtifactKind = z.infer<typeof ArtifactKindSchema>;
 
 export const AgentAssignmentSchema = z.object({
@@ -100,10 +145,11 @@ export const AgentAssignmentSchema = z.object({
   operationKey: z.string().min(1),
   role: AgentRoleSchema,
   stage: AssignmentStageSchema,
+  taskId: z.string().optional(),
   inputPath: z.string().min(1),
   outputPath: z.string().min(1),
   expectedKind: ArtifactKindSchema,
-  attempt: z.number().int().min(1).max(2),
+  attempt: z.number().int().min(1),
   status: AssignmentStatusSchema,
   agentId: z.string().min(1).optional(),
   writerLeaseSessionId: z.string().min(1).optional(),
@@ -116,13 +162,13 @@ export const AgentAssignmentSchema = z.object({
   stopReason: z.string().optional(),
   error: z.string().optional(),
   outcome: AssignmentOutcomeSchema.optional(),
-  artifactStatus: ArtifactFrontmatterSchema.shape.status.optional(),
+  artifactStatus: ArtifactStatusSchema.optional(),
   nextAction: z.string().min(1).optional(),
   targetWorkflowStatus: WorkflowStatusSchema.optional(),
 });
 
 export const SessionLedgerSchema = z.object({
-  schema: z.literal("cdo-sessions/v1"),
+  schema: z.literal("cdo-sessions/v2"),
   workflowId: WorkflowIdSchema,
   assignments: z.array(AgentAssignmentSchema),
 });
@@ -134,26 +180,12 @@ export type AgentAssignment = z.infer<typeof AgentAssignmentSchema>;
 export type SessionLedger = z.infer<typeof SessionLedgerSchema>;
 
 export const ProjectConfigSchema = z.object({
-  project: z.object({
-    id: z.string().min(1),
-    default_branch: z.string().min(1),
-  }),
-  models: z.object({
-    coordinator: z.string(),
-    planner: z.string(),
-    reviewer: z.string(),
-    worker: z.string(),
-  }),
-  effort: z.object({
-    coordinator: z.literal("medium"),
-    planner: z.literal("high"),
-    reviewer: z.literal("high"),
-    worker: z.literal("medium"),
-  }),
+  project: z.object({ id: z.string().min(1), default_branch: z.string().min(1) }),
+  models: z.object({ coordinator: z.string(), researcher: z.string(), planner: z.string(), reviewer: z.string(), worker: z.string() }),
+  effort: z.object({ coordinator: z.string(), researcher: z.string(), planner: z.string(), reviewer: z.string(), worker: z.string() }),
   workflow: z.object({
-    max_retry: z.literal(1),
-    max_remediation_rounds: z.literal(2),
-    require_plan_approval: z.literal(true),
+    no_progress_limit: z.number().int().min(2).default(3),
+    require_brainstorm_for: z.array(WorkflowTierSchema).default(["normal", "large"]),
     auto_commit: z.boolean(),
   }),
   browser: z.object({
@@ -166,6 +198,7 @@ export const ProjectConfigSchema = z.object({
     profile_names: z.array(z.string()),
     allowed_environments: z.array(z.string()),
     allowed_hosts: z.array(z.string()),
+    allow_direct_local_access: z.boolean().default(true),
   }),
   git: z.object({
     auto_push_checkpoint: z.boolean(),

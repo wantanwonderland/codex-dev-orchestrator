@@ -12,13 +12,15 @@ import {
 import { workflowRuntimeRoot } from "./project-root.js";
 
 const TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
-  draft_plan: ["awaiting_plan_approval", "blocked"],
-  awaiting_plan_approval: ["executing", "blocked"],
-  executing: ["reviewing", "browser_verification", "blocked"],
-  reviewing: ["executing", "remediating", "browser_verification", "complete", "blocked"],
-  remediating: ["reviewing", "blocked"],
-  browser_verification: ["remediating", "complete", "blocked"],
-  blocked: ["draft_plan", "awaiting_plan_approval", "executing", "reviewing", "browser_verification"],
+  discovering: ["brainstorming", "planning", "needs_human"],
+  brainstorming: ["planning", "needs_human"],
+  planning: ["executing", "needs_human"],
+  executing: ["planning", "diagnosing", "reviewing", "browser_verification", "needs_human"],
+  diagnosing: ["planning", "executing", "reviewing", "needs_human"],
+  reviewing: ["executing", "remediating", "browser_verification", "complete", "needs_human"],
+  remediating: ["diagnosing", "reviewing", "needs_human"],
+  browser_verification: ["remediating", "complete", "needs_human"],
+  needs_human: ["discovering", "brainstorming", "planning", "executing", "diagnosing", "reviewing", "browser_verification"],
   complete: [],
 };
 
@@ -28,10 +30,7 @@ export class StateStore {
   readonly statePath: string;
   readonly eventsPath: string;
 
-  constructor(
-    readonly projectRoot: string,
-    workflowId: string,
-  ) {
+  constructor(readonly projectRoot: string, workflowId: string) {
     this.workflowId = WorkflowIdSchema.parse(workflowId);
     this.runtimeDir = join(workflowRuntimeRoot(projectRoot), this.workflowId);
     this.statePath = join(this.runtimeDir, "state.json");
@@ -41,22 +40,24 @@ export class StateStore {
   async create(input: { objective: string; tier: WorkflowTier; mode: WorkflowMode }): Promise<WorkflowState> {
     const now = new Date().toISOString();
     const state = WorkflowStateSchema.parse({
-      schema: "cdo-state/v1",
+      schema: "cdo-state/v2",
       workflowId: this.workflowId,
       projectRoot: this.projectRoot,
       objective: input.objective,
       tier: input.tier,
       mode: input.mode,
-      status: "draft_plan",
+      status: input.tier === "small" ? "planning" : "discovering",
       phase: "phase-1",
-      retryCount: 0,
-      remediationRounds: 0,
+      researchComplete: input.tier === "small",
+      decisionsComplete: input.tier === "small",
+      planRevision: 0,
+      tasks: [],
       operationFailures: {},
       createdAt: now,
       updatedAt: now,
     });
     await this.persist(state);
-    await this.appendEvent("workflow.created", { status: state.status });
+    await this.appendEvent("workflow.created", { status: state.status, mode: state.mode, tier: state.tier });
     return state;
   }
 
@@ -72,20 +73,9 @@ export class StateStore {
   }
 
   async transition(state: WorkflowState, status: WorkflowStatus, event: string): Promise<WorkflowState> {
-    if (status === "executing" && !state.planApproval) {
-      throw new Error("Explicit plan approval is required before execution");
-    }
-    if (!TRANSITIONS[state.status].includes(status)) {
-      throw new Error(`Invalid workflow transition: ${state.status} -> ${status}`);
-    }
-    if (status === "complete" && state.writerLease) {
-      throw new Error("Cannot complete a workflow while a writer lease is active");
-    }
-    if (status === "remediating" && state.remediationRounds >= 2) {
-      throw new Error("The maximum of 2 remediation rounds has been reached; human escalation is required");
-    }
-    const remediationRounds = status === "remediating" ? state.remediationRounds + 1 : state.remediationRounds;
-    return this.save({ ...state, status, remediationRounds }, event, { from: state.status, to: status, remediationRounds });
+    if (!TRANSITIONS[state.status].includes(status)) throw new Error(`Invalid workflow transition: ${state.status} -> ${status}`);
+    if (status === "complete" && state.writerLease) throw new Error("Cannot complete a workflow while a writer lease is active");
+    return this.save({ ...state, status, humanGate: status === "needs_human" ? state.humanGate : undefined }, event, { from: state.status, to: status });
   }
 
   async recordEvent(type: string, detail: Record<string, unknown> = {}): Promise<void> {
@@ -93,17 +83,17 @@ export class StateStore {
   }
 
   private async persist(state: WorkflowState): Promise<void> {
-    await mkdir(dirname(this.statePath), { recursive: true });
+    await mkdir(dirname(this.statePath), { recursive: true, mode: 0o700 });
     const temporary = `${this.statePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
     await rename(temporary, this.statePath);
   }
 
   private async appendEvent(type: string, detail: Record<string, unknown>): Promise<void> {
-    await mkdir(dirname(this.eventsPath), { recursive: true });
+    await mkdir(dirname(this.eventsPath), { recursive: true, mode: 0o700 });
     await appendFile(
       this.eventsPath,
-      `${JSON.stringify({ schema: "cdo-event/v1", at: new Date().toISOString(), type, workflowId: this.workflowId, detail })}\n`,
+      `${JSON.stringify({ schema: "cdo-event/v2", at: new Date().toISOString(), type, workflowId: this.workflowId, detail })}\n`,
       { mode: 0o600 },
     );
   }

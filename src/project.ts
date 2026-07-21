@@ -1,16 +1,15 @@
 import { createHash } from "node:crypto";
-import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseArtifact, renderArtifact } from "./frontmatter.js";
+import { renderArtifact } from "./frontmatter.js";
 import { StateStore } from "./state-store.js";
-import { AssignmentStore } from "./assignments.js";
 import { WorkflowIdSchema, type WorkflowMode, type WorkflowTier } from "./types.js";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const CDO_VERSION = "0.3.0";
-const AGENT_NAMES = ["coordinator", "planner", "executor", "reviewer", "fixer", "browser-verifier"] as const;
-const V011_AGENT_HASHES: Record<(typeof AGENT_NAMES)[number], string> = {
+const CDO_VERSION = "0.4.0";
+const AGENT_NAMES = ["coordinator", "researcher", "planner", "executor", "reviewer", "fixer", "browser-verifier"] as const;
+const V011_AGENT_HASHES: Partial<Record<(typeof AGENT_NAMES)[number], string>> = {
   "browser-verifier": "c48dc2dd83ee5a3f7c3a9a350bea55a00277520d2756c8548aa03d1ada84b389",
   coordinator: "56f5ab6446b16102db9de9eed01e31ee5edb0a18f7127def219f1bbcae7504ae",
   executor: "19a34fcd7a824634e603d35b400bfc156f995c9994051d776a7e83d4006e1b11",
@@ -89,83 +88,63 @@ export async function startWorkflow(
   await writeFile(
     join(root, "index.md"),
     renderArtifact(
-      { schema: "cdo/v1", kind: "index", workflow_id: workflowId, status: "draft", created_at: now, updated_at: now },
-      `# ${workflowId}\n\n## Objective\n\n${input.objective}\n\n## Gate\n\nImplementation is blocked until the persisted plan is explicitly approved.`,
+      { schema: "cdo/v2", kind: "index", workflow_id: workflowId, status: "in_progress", created_at: now, updated_at: now },
+      `# ${workflowId}\n\n## Objective\n\n${input.objective}\n\n## Operating mode\n\nThe coordinator continues autonomously through research, planning, implementation, review, remediation, and verification. Human input is requested only for a typed safety or product-decision gate.`,
     ),
     { flag: "wx" },
   );
   if (input.tier !== "small") {
     await writeFile(
+      join(root, "research.md"),
+      renderArtifact(
+        { schema: "cdo/v2", kind: "research", workflow_id: workflowId, status: "draft", created_at: now, updated_at: now },
+        `# Research\n\nThe researcher will persist repository findings and current web sources with URLs and access dates.`,
+      ),
+      { flag: "wx" },
+    );
+    await writeFile(
+      join(root, "decisions.md"),
+      renderArtifact(
+        { schema: "cdo/v2", kind: "decisions", workflow_id: workflowId, status: "draft", created_at: now, updated_at: now },
+        `# Brainstorming decisions\n\n## Questions\n\nThe coordinator records material product choices here before planning.\n\n## Decisions\n\nNo decisions recorded yet.`,
+      ),
+      { flag: "wx" },
+    );
+    await writeFile(
       join(root, "spec.md"),
       renderArtifact(
-        { schema: "cdo/v1", kind: "spec", workflow_id: workflowId, status: "draft", created_at: now, updated_at: now },
-        `# Specification\n\n## Problem\n\n${input.objective}\n\n## Scope\n\nTo be completed by the planner.\n\n## Acceptance criteria\n\nTo be completed by the planner.`,
+        { schema: "cdo/v2", kind: "spec", workflow_id: workflowId, status: "draft", created_at: now, updated_at: now },
+        `# Specification\n\n## Problem\n\n${input.objective}\n\n## Scope\n\nDerived from research and brainstorming.\n\n## Acceptance criteria\n\nDefined before execution.`,
       ),
       { flag: "wx" },
     );
   }
-  const planKind = input.tier === "small" ? "task-brief" : "plan";
-  const planName = input.tier === "small" ? join(root, "tasks", "task-1.md") : join(root, "plan.md");
-  await writeFile(
-    planName,
-    renderArtifact(
-      { schema: "cdo/v1", kind: planKind, workflow_id: workflowId, status: "awaiting_approval", created_at: now, updated_at: now },
-      `# Implementation plan\n\nPlanner-owned content. The coordinator persists the planner output verbatim.`,
-    ),
-    { flag: "wx" },
-  );
+  await writeFile(join(root, "plan.md"), renderArtifact(
+    { schema: "cdo/v2", kind: "plan", workflow_id: workflowId, status: "draft", created_at: now, updated_at: now },
+    `# Implementation plan\n\nThe planner replaces this draft with a complete dependency-ordered task bundle.`,
+  ), { flag: "wx" });
   if (input.tier === "large") {
     await mkdir(join(root, "phases"), { recursive: true });
     await writeFile(
       join(root, "phases", "phase-1.md"),
       renderArtifact(
-        { schema: "cdo/v1", kind: "phase-plan", workflow_id: workflowId, phase: "phase-1", status: "draft", created_at: now, updated_at: now },
-        "# Phase 1\n\nPlanner-owned phase contract, tasks, integration points, and release gates.",
-      ),
-      { flag: "wx" },
-    );
-    await writeFile(
-      join(root, "tasks", "task-1.md"),
-      renderArtifact(
-        { schema: "cdo/v1", kind: "task-brief", workflow_id: workflowId, phase: "phase-1", task: "task-1", status: "draft", created_at: now, updated_at: now },
-        "# Task 1\n\nPlanner-owned implementation brief with exact files, tests, and evidence requirements.",
+        { schema: "cdo/v2", kind: "phase-plan", workflow_id: workflowId, phase: "phase-1", status: "draft", created_at: now, updated_at: now },
+        "# Phase 1\n\nThe planner replaces this draft with the phase contract, integration points, and release gates.",
       ),
       { flag: "wx" },
     );
   }
   const store = new StateStore(projectRoot, workflowId);
-  const state = await store.create({ objective: input.objective, tier: input.tier, mode: input.mode ?? "human_gated" });
-  await store.transition(state, "awaiting_plan_approval", "plan.created");
+  await store.create({ objective: input.objective, tier: input.tier, mode: input.mode ?? "autonomous" });
 }
 
-export async function approvePlan(projectRoot: string, workflowId: string, approvedBy: string): Promise<void> {
-  const store = new StateStore(projectRoot, workflowId);
-  const state = await store.load();
-  if (state.status !== "awaiting_plan_approval") throw new Error("Workflow is not awaiting plan approval");
-  const planPath = join(projectRoot, ".codex", "workflows", workflowId, state.tier === "small" ? "tasks/task-1.md" : "plan.md");
-  const parsed = parseArtifact(await readFile(planPath, "utf8"));
-  if (parsed.frontmatter.workflow_id !== workflowId) throw new Error("Plan workflow identity does not match runtime state");
-  const expectedOutput = state.tier === "small" ? "tasks/task-1.md" : "plan.md";
-  const planningAssignments = (await new AssignmentStore(projectRoot, workflowId).load()).assignments.filter(
-    (assignment) => assignment.stage === "planning" && assignment.outputPath === expectedOutput &&
-      assignment.status === "reconciled" && assignment.outcome === "succeeded",
-  );
-  const planningAssignment = planningAssignments.at(-1);
-  if (!planningAssignment || parsed.frontmatter.assignment_id !== planningAssignment.id ||
-      parsed.frontmatter.operation_key !== planningAssignment.operationKey || parsed.frontmatter.agent_role !== "planner") {
-    throw new Error("Plan approval requires a successfully reconciled planner assignment for the persisted plan");
-  }
-  const approvedPlan = renderArtifact(
-    { ...parsed.frontmatter, status: "approved", updated_at: new Date().toISOString() },
-    parsed.body,
-  );
-  await writeFile(planPath, approvedPlan);
-  const planSha256 = createHash("sha256").update(approvedPlan).digest("hex");
-  await store.save(
-    { ...state, planApproval: { approvedBy, approvedAt: new Date().toISOString(), planSha256 } },
-    "plan.approved",
-    { approvedBy, planSha256 },
-  );
+export async function resetProject(projectRoot: string): Promise<void> {
+  const manifest = join(projectRoot, ".codex", "cdo-managed.json");
+  await access(manifest);
+  await rm(join(projectRoot, ".codex", "workflow-runtime"), { recursive: true, force: true });
+  await rm(join(projectRoot, ".codex", "workflows"), { recursive: true, force: true });
+  await mkdir(join(projectRoot, ".codex", "workflow-runtime"), { recursive: true, mode: 0o700 });
+  await mkdir(join(projectRoot, ".codex", "workflows"), { recursive: true });
 }
 
 async function appendUnique(path: string, line: string): Promise<void> {
@@ -179,7 +158,7 @@ async function appendUnique(path: string, line: string): Promise<void> {
 }
 
 function projectConfig(input: { projectId: string; defaultBranch: string }): string {
-  return `[project]\nid = "${input.projectId}"\ndefault_branch = "${input.defaultBranch}"\n\n[models]\ncoordinator = "gpt-5.6-terra"\nplanner = "gpt-5.6-sol"\nreviewer = "gpt-5.6-sol"\nworker = "gpt-5.6-terra"\n\n[effort]\ncoordinator = "medium"\nplanner = "high"\nreviewer = "high"\nworker = "medium"\n\n[workflow]\nmax_retry = 1\nmax_remediation_rounds = 2\nrequire_plan_approval = true\nauto_commit = true\n\n[browser]\ndesktop_viewport = "1440x900"\nmobile_viewport = "390x844"\nrequire_live_for_customer_ui = true\nallowed_roles = ["admin", "member", "customer"]\n\n[credentials]\nprofile_names = ["local"]\nallowed_environments = ["local", "test"]\nallowed_hosts = ["localhost", "127.0.0.1"]\n\n[git]\nauto_push_checkpoint = true\nauto_draft_pr = true\nrequire_approval_if_deploy_coupled = true\n`;
+  return `[project]\nid = "${input.projectId}"\ndefault_branch = "${input.defaultBranch}"\n\n[models]\ncoordinator = "gpt-5.6-terra"\nresearcher = "gpt-5.6-sol"\nplanner = "gpt-5.6-sol"\nreviewer = "gpt-5.6-sol"\nworker = "gpt-5.6-terra"\n\n[effort]\ncoordinator = "high"\nresearcher = "high"\nplanner = "high"\nreviewer = "high"\nworker = "medium"\n\n[workflow]\nno_progress_limit = 3\nrequire_brainstorm_for = ["normal", "large"]\nauto_commit = true\n\n[browser]\ndesktop_viewport = "1440x900"\nmobile_viewport = "390x844"\nrequire_live_for_customer_ui = true\nallowed_roles = ["admin", "member", "customer"]\n\n[credentials]\nprofile_names = ["local"]\nallowed_environments = ["local", "test"]\nallowed_hosts = ["localhost", "127.0.0.1"]\nallow_direct_local_access = true\n\n[git]\nauto_push_checkpoint = true\nauto_draft_pr = true\nrequire_approval_if_deploy_coupled = true\n`;
 }
 
 async function installCodexConfig(projectRoot: string): Promise<void> {

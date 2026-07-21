@@ -9,6 +9,7 @@ import type { HistoryRecord, ProjectSnapshot, ScanIssue, ScanOptions, ScanResult
 
 const DEFAULT_IGNORED = new Set([".git", "node_modules", "dist", "build", "coverage", ".next", ".cache", ".gradle", ".idea", ".venv", "Pods", "target", "vendor"]);
 const MAX_METADATA_BYTES = 1024 * 1024;
+const DISCOVERY_CONCURRENCY = 32;
 
 interface Candidate {
   rootId: number;
@@ -32,7 +33,10 @@ interface ArtifactMetadata {
 }
 
 export async function scanRegisteredRoots(database: DashboardDatabase, options: ScanOptions = {}): Promise<ScanResult> {
-  const maxDepth = options.maxDepth ?? 8;
+  // Workspace roots normally contain repositories directly or one grouping
+  // directory deep. Keeping the default shallow avoids spending the entire
+  // directory budget inside one large checkout before sibling projects appear.
+  const maxDepth = options.maxDepth ?? 3;
   const maxDirectories = options.maxDirectories ?? 25_000;
   const ignored = new Set(options.ignoredDirectoryNames ?? DEFAULT_IGNORED);
   const issues: ScanIssue[] = [];
@@ -45,46 +49,53 @@ export async function scanRegisteredRoots(database: DashboardDatabase, options: 
     let rootError: string | null = null;
     let rootDirectoriesVisited = 0;
     const queue: Array<{ path: string; depth: number }> = [{ path: root.path, depth: 0 }];
-    while (queue.length > 0) {
-      if (rootDirectoriesVisited >= maxDirectories) {
-        truncated = true;
-        rootError = `scan stopped at the ${maxDirectories} directory limit`;
-        break;
-      }
-      const current = queue.shift()!;
-      directoriesVisited += 1;
-      rootDirectoriesVisited += 1;
-      let entries;
-      try {
-        entries = await readdir(current.path, { withFileTypes: true });
-      } catch (error) {
-        const message = errorMessage(error);
-        issues.push({ path: current.path, message });
-        rootError ??= message;
-        continue;
-      }
-      const codex = entries.find((entry) => entry.isDirectory() && entry.name === ".codex");
-      if (codex && await isFile(join(current.path, ".codex", "workflow.toml"))) {
+    let cursor = 0;
+    while (cursor < queue.length && rootDirectoriesVisited < maxDirectories) {
+      const batch = queue.slice(cursor, cursor + Math.min(DISCOVERY_CONCURRENCY, maxDirectories - rootDirectoriesVisited));
+      cursor += batch.length;
+      directoriesVisited += batch.length;
+      rootDirectoriesVisited += batch.length;
+      await Promise.all(batch.map(async (current) => {
+        let entries;
         try {
-          const canonicalPath = await realpath(current.path);
-          const gitCommonDir = await resolveGitCommonDir(current.path);
-          candidates.push({
-            rootId: root.id,
-            projectPath: resolve(current.path),
-            canonicalPath,
-            gitCommonDir,
-            identity: gitCommonDir ?? canonicalPath,
-          });
+          entries = await readdir(current.path, { withFileTypes: true });
         } catch (error) {
-          issues.push({ path: current.path, message: errorMessage(error) });
+          const message = errorMessage(error);
+          issues.push({ path: current.path, message });
+          rootError ??= message;
+          return;
         }
-        continue;
-      }
-      if (current.depth >= maxDepth) continue;
-      for (const entry of entries) {
-        if (!entry.isDirectory() || entry.isSymbolicLink() || ignored.has(entry.name)) continue;
-        queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 });
-      }
+        const codex = entries.find((entry) => entry.isDirectory() && entry.name === ".codex");
+        const git = entries.find((entry) => entry.name === ".git" && (entry.isDirectory() || entry.isFile()));
+        // A dashboard root represents a collection of repositories. CDO metadata is
+        // optional: projects without an active CDO workflow still need to appear so
+        // their repository and future telemetry are visible in the fleet view.
+        if ((codex && await isFile(join(current.path, ".codex", "workflow.toml"))) || git) {
+          try {
+            const canonicalPath = await realpath(current.path);
+            const gitCommonDir = await resolveGitCommonDir(current.path);
+            candidates.push({
+              rootId: root.id,
+              projectPath: resolve(current.path),
+              canonicalPath,
+              gitCommonDir,
+              identity: gitCommonDir ?? canonicalPath,
+            });
+          } catch (error) {
+            issues.push({ path: current.path, message: errorMessage(error) });
+          }
+          return;
+        }
+        if (current.depth >= maxDepth) return;
+        for (const entry of entries) {
+          if (!entry.isDirectory() || entry.isSymbolicLink() || ignored.has(entry.name)) continue;
+          queue.push({ path: join(current.path, entry.name), depth: current.depth + 1 });
+        }
+      }));
+    }
+    if (cursor < queue.length) {
+      truncated = true;
+      rootError = `scan stopped at the ${maxDirectories} directory limit`;
     }
     database.updateRootScan(root.id, rootError);
   }

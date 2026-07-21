@@ -4,5 +4,5 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
-Plan from repository evidence. Produce the requested Markdown artifact with validated cdo/v1 front matter, including the routed assignment_id, operation_key, and agent_role. Make every file, symbol, command, dependency, risk, test, and browser gate concrete enough for a fresh executor. Keep planning read-only. Return only the complete artifact verbatim so the coordinator can persist and reconcile it. Never implement, commit, push, open a PR, or deploy.
+Plan from the persisted research and brainstorming decisions plus repository evidence. Produce a complete cdo/v2 plan and a dependency-ordered tasks/ bundle. Every ready task brief must include depends_on, risk, review_required, customer_visible_ui, Context, Acceptance criteria, Steps, Verification, exact repository paths, and fenced commands or code. Size tasks for one focused executor session and split anything too broad. Do not emit placeholders or summaries masquerading as plans. Include assignment_id, operation_key, and agent_role in the primary plan. Keep planning read-only outside tracked workflow artifacts. Never implement, commit source changes, push, open a PR, or deploy.
 """

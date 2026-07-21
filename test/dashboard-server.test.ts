@@ -18,11 +18,11 @@ describe("dashboard server", () => {
     const project = join(root, "project");
     await mkdir(join(project, ".codex", "workflows", "shared"), { recursive: true });
     await writeFile(join(project, ".codex", "workflow.toml"), '[project]\nid = "server-fixture"\ndefault_branch = "main"\n');
-    await writeFile(join(project, ".codex", "workflows", "shared", "index.md"), "---\nschema: cdo/v1\nkind: index\nworkflow_id: shared\nstatus: draft\n---\n");
+    await writeFile(join(project, ".codex", "workflows", "shared", "index.md"), "---\nschema: cdo/v2\nkind: index\nworkflow_id: shared\nstatus: draft\n---\n");
     const second = join(root, "second");
     await mkdir(join(second, ".codex", "workflows", "shared"), { recursive: true });
     await writeFile(join(second, ".codex", "workflow.toml"), '[project]\nid = "second-fixture"\ndefault_branch = "main"\n');
-    await writeFile(join(second, ".codex", "workflows", "shared", "index.md"), "---\nschema: cdo/v1\nkind: index\nworkflow_id: shared\nstatus: draft\n---\n");
+    await writeFile(join(second, ".codex", "workflows", "shared", "index.md"), "---\nschema: cdo/v2\nkind: index\nworkflow_id: shared\nstatus: draft\n---\n");
     process.env.CDO_DASHBOARD_HOME = join(root, "dashboard-home");
     await addDashboardRoot(root);
 
@@ -38,7 +38,7 @@ describe("dashboard server", () => {
     try {
       const health = await running.app.inject({ method: "GET", url: "/api/health", headers: { host: "127.0.0.1" } });
       expect(health.statusCode).toBe(200);
-      expect(health.json()).toMatchObject({ ok: true, version: "0.3.0" });
+      expect(health.json()).toMatchObject({ ok: true, version: "0.4.0" });
 
       const settings = await running.app.inject({ method: "GET", url: "/api/settings", headers: { host: "127.0.0.1" } });
       expect(settings.json().roots[0]).toMatchObject({ path: root, projects: 2 });
@@ -51,7 +51,7 @@ describe("dashboard server", () => {
       expect(scoped.json()).toMatchObject({ projectId, id: "shared" });
 
       await new Promise((resolve) => setTimeout(resolve, 150));
-      await writeFile(join(project, ".codex", "workflows", "shared", "index.md"), "---\nschema: cdo/v1\nkind: index\nworkflow_id: shared\nstatus: complete\nupdated_at: 2026-07-21T00:00:00.000Z\n---\n");
+      await writeFile(join(project, ".codex", "workflows", "shared", "index.md"), "---\nschema: cdo/v2\nkind: index\nworkflow_id: shared\nstatus: complete\nupdated_at: 2026-07-21T00:00:00.000Z\n---\n");
       let observed = false;
       for (let attempt = 0; attempt < 20 && !observed; attempt += 1) {
         await new Promise((resolve) => setTimeout(resolve, 100));

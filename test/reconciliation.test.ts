@@ -15,196 +15,79 @@ async function setup(status: "executing" | "reviewing") {
   await mkdir(join(workflow, "tasks"), { recursive: true });
   await mkdir(join(workflow, "reports"), { recursive: true });
   await mkdir(join(workflow, "reviews"), { recursive: true });
-  await writeFile(join(workflow, "index.md"), "Build a backend feature");
-  await writeFile(join(workflow, "plan.md"), "Build a backend feature");
-  await writeFile(join(workflow, "tasks/task-1.md"), "task");
+  await writeFile(join(workflow, "index.md"), "Build a feature");
   const store = new StateStore(root, "wf-1");
-  let state = await store.create({ objective: "ship", tier: "normal", mode: "local_auto" });
-  state = await store.save({
-    ...state,
-    status,
-    planApproval: { approvedBy: "human", approvedAt: now, planSha256: "a".repeat(64) },
-  }, "test.setup");
+  let state = await store.create({ objective: "ship", tier: "normal", mode: "autonomous" });
+  state = await store.save({ ...state, status, researchComplete: true, decisionsComplete: true, tasks: [{ id: "task-1", title: "Task", path: "tasks/task-1.md", dependsOn: [], risk: "high", reviewRequired: true, customerVisibleUi: false, status: status === "executing" ? "ready" : "reviewing", attempts: 0, consecutiveNoProgress: 0 }] }, "test.setup");
   return { root, state };
 }
 
-describe("assignment reconciliation", () => {
-  it("rejects an agent routing path as writer-lease identity", async () => {
+async function completeExecutor(root: string, status: "complete" | "partial" = "complete") {
+  const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "task-1", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/task-1.md", expectedKind: "executor-report" });
+  const assignments = new AssignmentStore(root, "wf-1");
+  await assignments.bindStartedById(assignment.id, "agent-1");
+  await acquireLease(root, "wf-1", "executor", "writer-1");
+  await releaseLease(root, "wf-1", "writer-1");
+  await assignments.bindStoppedById(assignment.id, "agent-1");
+  await writeFile(join(root, ".codex/workflows/wf-1/reports/task-1.md"), renderArtifact({ schema: "cdo/v2", kind: "executor-report", workflow_id: "wf-1", task: "task-1", status, created_at: now, updated_at: now, assignment_id: assignment.id, operation_key: assignment.operationKey, agent_role: "executor" }, "# Handoff"));
+  return { assignment, result: await reconcileAgentAssignment(root, "wf-1", assignment.id) };
+}
+
+describe("autonomous assignment reconciliation", () => {
+  it("routes a high-risk completed task to independent review", async () => {
     const { root } = await setup("executing");
-    await expect(acquireLease(root, "wf-1", "executor", "/root/executor-task")).rejects.toThrow(/parent session ID/);
+    const { result } = await completeExecutor(root);
+    expect(result).toMatchObject({ nextAction: "assign_task_reviewer", state: { status: "reviewing", tasks: [{ status: "reviewing" }] }, assignment: { status: "reconciled" } });
   });
 
-  it("routes a completed executor handoff to review", async () => {
+  it("continues partial work without human approval", async () => {
     const { root } = await setup("executing");
-    const assignment = await createAgentAssignment(root, "wf-1", {
-      operationKey: "task-1",
-      role: "executor",
-      stage: "implementation",
-      inputPath: "tasks/task-1.md",
-      outputPath: "reports/task-1.md",
-      expectedKind: "executor-report",
-    });
-    const assignments = new AssignmentStore(root, "wf-1");
-    await assignments.bindStarted("executor", "agent-1");
-    await acquireLease(root, "wf-1", "executor", "writer-1");
-    await releaseLease(root, "wf-1", "writer-1");
-    await assignments.bindStopped("executor", { agentId: "agent-1" });
-    await writeFile(join(root, ".codex/workflows/wf-1/reports/task-1.md"), renderArtifact({
-      schema: "cdo/v1",
-      kind: "executor-report",
-      workflow_id: "wf-1",
-      status: "complete",
-      created_at: now,
-      updated_at: now,
-      assignment_id: assignment.id,
-      operation_key: assignment.operationKey,
-      agent_role: "executor",
-    }, "# Complete"));
-
-    const result = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-    expect(result.nextAction).toBe("assign_reviewer");
-    expect(result.state.status).toBe("reviewing");
-    expect(result.assignment.status).toBe("reconciled");
+    const { result } = await completeExecutor(root, "partial");
+    expect(result).toMatchObject({ nextAction: "continue_executor", state: { status: "executing", tasks: [{ status: "partial" }] }, assignment: { outcome: "continue" } });
   });
 
-  it("retries one malformed handoff and blocks the second attempt", async () => {
+  it("diagnoses the third consecutive no-progress partial handoff", async () => {
+    const { root } = await setup("executing");
+    expect((await completeExecutor(root, "partial")).result.nextAction).toBe("continue_executor");
+    expect((await completeExecutor(root, "partial")).result.nextAction).toBe("continue_executor");
+    const third = (await completeExecutor(root, "partial")).result;
+    expect(third).toMatchObject({ nextAction: "assign_diagnosis", state: { status: "diagnosing", tasks: [{ consecutiveNoProgress: 3 }] } });
+  });
+
+  it("routes repeated malformed handoffs to diagnosis on the third failure", async () => {
     const { root } = await setup("reviewing");
-    const first = await createAgentAssignment(root, "wf-1", {
-      operationKey: "phase-review",
-      role: "reviewer",
-      stage: "phase_review",
-      inputPath: "plan.md",
-      outputPath: "reviews/phase-final.md",
-      expectedKind: "review",
-      sourceCommit: "base-commit",
-    });
-    const assignments = new AssignmentStore(root, "wf-1");
-    await assignments.bindStarted("reviewer", "agent-1");
-    await assignments.bindStopped("reviewer", { agentId: "agent-1" });
-    expect((await reconcileAgentAssignment(root, "wf-1", first.id)).nextAction).toBe("retry_reviewer");
-
-    const second = await createAgentAssignment(root, "wf-1", {
-      operationKey: "phase-review",
-      role: "reviewer",
-      stage: "phase_review",
-      inputPath: "plan.md",
-      outputPath: "reviews/phase-final.md",
-      expectedKind: "review",
-      sourceCommit: "base-commit",
-    });
-    await assignments.bindStarted("reviewer", "agent-2");
-    await assignments.bindStopped("reviewer", { agentId: "agent-2" });
-    const result = await reconcileAgentAssignment(root, "wf-1", second.id);
-    expect(result.nextAction).toBe("human_reconciliation");
-    expect(result.state.status).toBe("blocked");
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "phase-review", role: "reviewer", stage: "phase_review", inputPath: "reports/task-1.md", outputPath: "reviews/phase-final.md", expectedKind: "review", sourceCommit: "base" });
+      const assignments = new AssignmentStore(root, "wf-1");
+      await assignments.bindStartedById(assignment.id, `reviewer-${attempt}`);
+      await assignments.bindStoppedById(assignment.id, `reviewer-${attempt}`);
+      const result = await reconcileAgentAssignment(root, "wf-1", assignment.id);
+      expect(result.nextAction).toBe(attempt === 3 ? "assign_diagnosis" : "retry_reviewer");
+    }
+    expect((await new StateStore(root, "wf-1").load()).status).toBe("diagnosing");
   });
 
-  it("returns the persisted routing result when reconciliation is repeated", async () => {
+  it("uses a typed human gate only for missing writer safety evidence", async () => {
     const { root } = await setup("executing");
-    const assignment = await createAgentAssignment(root, "wf-1", {
-      operationKey: "idempotent-task",
-      role: "executor",
-      stage: "implementation",
-      inputPath: "tasks/task-1.md",
-      outputPath: "reports/task-1.md",
-      expectedKind: "executor-report",
-    });
+    const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "unsafe", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/task-1.md", expectedKind: "executor-report" });
     const assignments = new AssignmentStore(root, "wf-1");
-    await assignments.bindStartedById(assignment.id, "agent-1");
-    await acquireLease(root, "wf-1", "executor", "writer-1");
-    await releaseLease(root, "wf-1", "writer-1");
-    await assignments.bindStoppedById(assignment.id, "agent-1");
-    await writeFile(join(root, ".codex/workflows/wf-1/reports/task-1.md"), renderArtifact({
-      schema: "cdo/v1", kind: "executor-report", workflow_id: "wf-1", status: "complete",
-      created_at: now, updated_at: now, assignment_id: assignment.id,
-      operation_key: assignment.operationKey, agent_role: "executor",
-    }, "# Complete"));
-
-    const first = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-    const second = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-    expect(second.nextAction).toBe(first.nextAction);
-    expect(second.assignment).toEqual(first.assignment);
-    expect(second.state.status).toBe("reviewing");
+    await assignments.bindStartedById(assignment.id, "agent");
+    await assignments.bindStoppedById(assignment.id, "agent");
+    const result = await reconcileAgentAssignment(root, "wf-1", assignment.id);
+    expect(result).toMatchObject({ nextAction: "request_human", state: { status: "needs_human", humanGate: { kind: "destructive_action" } }, assignment: { status: "needs_human" } });
   });
 
-  it("resumes from a persisted reconciliation checkpoint after interruption", async () => {
+  it("rejects an agent routing path as writer identity", async () => {
     const { root } = await setup("executing");
-    const assignment = await createAgentAssignment(root, "wf-1", {
-      operationKey: "interrupted-route", role: "executor", stage: "implementation",
-      inputPath: "tasks/task-1.md", outputPath: "reports/task-1.md", expectedKind: "executor-report",
-    });
-    const assignments = new AssignmentStore(root, "wf-1");
-    await assignments.bindStartedById(assignment.id, "agent-1");
-    await acquireLease(root, "wf-1", "executor", "writer-1");
-    await releaseLease(root, "wf-1", "writer-1");
-    await assignments.bindStoppedById(assignment.id, "agent-1");
-    await assignments.beginReconciliation(assignment.id, {
-      artifactStatus: "complete", nextAction: "assign_reviewer", targetWorkflowStatus: "reviewing",
-    });
-
-    const resumed = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-    expect(resumed.assignment.status).toBe("reconciled");
-    expect(resumed.nextAction).toBe("assign_reviewer");
-    expect(resumed.state.status).toBe("reviewing");
+    await expect(acquireLease(root, "wf-1", "executor", "/root/task")).rejects.toThrow(/parent session ID/);
   });
 
-  it("terminalizes a crashed assignment so a fresh retry can be created", async () => {
+  it("terminalizes a crashed assignment so a fresh retry can be assigned", async () => {
     const { root } = await setup("executing");
-    const crashed = await createAgentAssignment(root, "wf-1", {
-      operationKey: "crashed-task", role: "executor", stage: "implementation",
-      inputPath: "tasks/task-1.md", outputPath: "reports/task-1.md", expectedKind: "executor-report",
-    });
-    await recordAgentFailure(root, "wf-1", crashed.operationKey, "agent timed out");
+    const crashed = await createAgentAssignment(root, "wf-1", { operationKey: "crash", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/a.md", expectedKind: "executor-report" });
+    await recordAgentFailure(root, "wf-1", "crash", "timeout");
     expect((await new AssignmentStore(root, "wf-1").get(crashed.id)).status).toBe("failed");
-    const retry = await createAgentAssignment(root, "wf-1", {
-      operationKey: "crashed-task", role: "executor", stage: "implementation",
-      inputPath: "tasks/task-1.md", outputPath: "reports/task-1-retry.md", expectedKind: "executor-report",
-    });
+    const retry = await createAgentAssignment(root, "wf-1", { operationKey: "crash", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/b.md", expectedKind: "executor-report" });
     expect(retry.attempt).toBe(2);
-  });
-
-  it("blocks executor reconciliation when no writer lease was ever acquired", async () => {
-    const { root } = await setup("executing");
-    const assignment = await createAgentAssignment(root, "wf-1", {
-      operationKey: "unleased-task", role: "executor", stage: "implementation",
-      inputPath: "tasks/task-1.md", outputPath: "reports/unleased.md", expectedKind: "executor-report",
-    });
-    const assignments = new AssignmentStore(root, "wf-1");
-    await assignments.bindStartedById(assignment.id, "agent-1");
-    await assignments.bindStoppedById(assignment.id, "agent-1");
-    const result = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-    expect(result.nextAction).toBe("human_reconciliation");
-    expect(result.assignment.error).toContain("no evidence");
-    expect(result.state.status).toBe("blocked");
-  });
-
-  it("escalates a failed review after two remediation rounds without scheduling another fixer", async () => {
-    const { root } = await setup("reviewing");
-    const stateStore = new StateStore(root, "wf-1");
-    const state = await stateStore.load();
-    await stateStore.save({ ...state, remediationRounds: 2 }, "test.remediation_exhausted");
-    const assignment = await createAgentAssignment(root, "wf-1", {
-      operationKey: "review-after-remediation",
-      role: "reviewer",
-      stage: "task_review",
-      inputPath: "reports/task-1.md",
-      outputPath: "reviews/task-1.md",
-      expectedKind: "review",
-      sourceCommit: "base-commit",
-    });
-    const assignments = new AssignmentStore(root, "wf-1");
-    await assignments.bindStartedById(assignment.id, "reviewer-1");
-    await assignments.bindStoppedById(assignment.id, "reviewer-1");
-    await writeFile(join(root, ".codex/workflows/wf-1/reviews/task-1.md"), renderArtifact({
-      schema: "cdo/v1", kind: "review", workflow_id: "wf-1", status: "failed",
-      created_at: now, updated_at: now, assignment_id: assignment.id,
-      operation_key: assignment.operationKey, agent_role: "reviewer", source_commit: "base-commit",
-    }, "# Failed review"));
-
-    const result = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-    expect(result.nextAction).toBe("human_reconciliation");
-    expect(result.assignment.status).toBe("blocked");
-    expect(result.state.status).toBe("blocked");
-    expect(result.state.operationFailures).toEqual({});
   });
 });

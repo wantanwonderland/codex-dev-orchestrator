@@ -21,7 +21,7 @@ export function Project() {
     <section className="metric-grid metric-grid--project">
       <Metric label="Current branch" value={data.branch} detail={`Default: ${data.defaultBranch}`} icon={GitBranch} />
       <Metric label="Workflow phase" value={data.phase} detail={data.workflowName} icon={WorkflowIcon} tone="teal" />
-      <Metric label="Task completion" value={`${data.tasks.complete}/${data.tasks.total}`} detail={`${data.tasks.blocked} blocked`} icon={ListChecks} tone={data.tasks.blocked ? "red" : "neutral"} />
+      <Metric label="Task completion" value={`${data.tasks.complete}/${data.tasks.total}`} detail={`${data.tasks.blocked} human gates`} icon={ListChecks} tone={data.tasks.blocked ? "red" : "neutral"} />
       <Metric label="Observed tokens" value={formatTokens(data.tokens)} detail={`${data.coverage} coverage`} icon={Zap} tone="amber" />
     </section>
 

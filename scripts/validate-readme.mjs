@@ -21,7 +21,7 @@ for (const diagram of diagrams) await mermaid.parse(diagram);
 
 const help = spawnSync(process.execPath, [join(root, "dist", "cli.js"), "--help"], { encoding: "utf8" });
 if (help.status !== 0) throw new Error(help.stderr);
-for (const command of ["init", "start", "upgrade-project", "approve-plan", "status", "assign", "assignments", "bind-agent", "reconcile", "acquire-writer", "release-writer", "risk", "validate-artifacts", "gate", "auth-state", "delete-auth-state", "publish-checkpoint", "merge-pr", "doctor"]) {
+for (const command of ["init", "start", "upgrade-project", "record-decisions", "resume", "reset-project", "status", "assign", "assignments", "bind-agent", "reconcile", "acquire-writer", "release-writer", "risk", "validate-artifacts", "gate", "auth-state", "delete-auth-state", "publish-checkpoint", "merge-pr", "doctor"]) {
   if (!help.stdout.includes(command)) throw new Error(`README command is missing from CLI: ${command}`);
 }
 console.log(`README validation OK (${diagrams.length} Mermaid diagrams and CLI command contract)`);

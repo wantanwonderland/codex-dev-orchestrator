@@ -1,14 +1,18 @@
 ---
-schema: cdo/v1
+schema: cdo/v2
 kind: spec
-workflow_id: codex-dev-orchestrator-v1
-status: approved
-created_at: 2026-07-20T00:00:00.000Z
-updated_at: 2026-07-20T00:00:00.000Z
+workflow_id: codex-dev-orchestrator-v2
+status: complete
+created_at: 2026-07-21T00:00:00.000Z
+updated_at: 2026-07-21T00:00:00.000Z
 ---
 
-# Codex Dev Orchestrator v1 product contract
+# Codex Dev Orchestrator 0.4 product contract
 
-Deliver a reusable, local-first Codex plugin in which one persistent coordinator creates explicit assignments, waits for fresh native Codex subagents, receives lifecycle notifications, reconciles durable evidence, and routes the next team owner. Use Sol/high only for planning and review and Terra/medium for coordination, execution, remediation, and browser verification. Require explicit approval of the persisted plan, one phase branch and isolated worktree, exclusive executor/fixer writer ownership, risk-based task review, mandatory whole-phase review, and live browser proof for customer-visible UI.
+CDO owns a software-delivery objective from discovery to verified completion. Normal and large work requires grounded repository inspection, current live-web research, and an interactive human brainstorming conversation before planning. Small work may plan immediately.
 
-The deterministic TypeScript layer owns assignment lifecycle, serialized ledger writes, crash-recoverable reconciliation, schemas, state transitions, event journaling, context budgets, leases, credential adapters, completion gates, and guarded GitHub commands. Native child IDs are explicitly bindable to assignment IDs; `SubagentStart` and `SubagentStop` update the runtime ledger automatically only when routing is unambiguous and never establish success by themselves. Plan approval requires a successfully reconciled planner artifact. Tracked Markdown is the cross-session contract; untracked JSON/JSONL is runtime state. Hooks are guardrails rather than an absolute security boundary. Deployment and production mutation always require explicit human instruction.
+Plans are executable task graphs, not summaries. Each task is focused, dependency-ordered, exact about files and verification, classified for risk, and independently reviewable. Execution, partial handoffs, retries, diagnosis, task splitting, replanning, review, and remediation continue without routine human approval.
+
+The only human gates are material product decisions, scope expansion, unavailable credentials, destructive actions, production mutations, merge/deploy authorization, and genuine external blockers. Local secret access is permitted by policy, but secret material cannot enter durable evidence or agent communication.
+
+The deterministic TypeScript layer owns schema validation, task-graph readiness, assignment lifecycle, atomic ledgers, crash-safe reconciliation, typed outcomes, writer leases, failure diagnosis, completion gates, and guarded remote actions. Tracked Markdown and Git are the cross-session contract; ignored JSON/JSONL is coordination state. Customer-visible UI requires a written roleplay and real browser evidence.

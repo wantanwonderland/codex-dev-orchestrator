@@ -25,8 +25,10 @@ const LOCK_TIMEOUT_MS = 5_000;
 const STALE_LOCK_MS = 30_000;
 
 const STAGE_CONTRACT: Record<AssignmentStage, { role: AgentRole; kinds: ArtifactKind[] }> = {
+  research: { role: "researcher", kinds: ["research"] },
   planning: { role: "planner", kinds: ["plan", "task-brief"] },
   implementation: { role: "executor", kinds: ["executor-report"] },
+  diagnosis: { role: "reviewer", kinds: ["review"] },
   task_review: { role: "reviewer", kinds: ["review"] },
   phase_review: { role: "reviewer", kinds: ["review"] },
   remediation: { role: "fixer", kinds: ["executor-report"] },
@@ -37,6 +39,7 @@ export interface CreateAssignmentInput {
   operationKey: string;
   role: AgentRole;
   stage: AssignmentStage;
+  taskId?: string;
   inputPath: string;
   outputPath: string;
   expectedKind: ArtifactKind;
@@ -65,7 +68,7 @@ export class AssignmentStore {
       return ledger;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { schema: "cdo-sessions/v1", workflowId: this.workflowId, assignments: [] };
+      return { schema: "cdo-sessions/v2", workflowId: this.workflowId, assignments: [] };
     }
   }
 
@@ -93,7 +96,6 @@ export class AssignmentStore {
       const pending = ledger.assignments.find((candidate) => candidate.role === role && PENDING.has(candidate.status));
       if (pending) throw new Error(`Role ${role} already has pending assignment ${pending.id}`);
       const attempt = ledger.assignments.filter((candidate) => candidate.operationKey === input.operationKey).length + 1;
-      if (attempt > 2) throw new Error(`Operation ${input.operationKey} exhausted its two assignment attempts`);
       const created = AgentAssignmentSchema.parse({
         id: randomUUID(),
         workflowId: this.workflowId,
@@ -161,7 +163,7 @@ export class AssignmentStore {
     update: Pick<AgentAssignment, "status" | "outcome"> & { error?: string; nextAction?: string },
   ): Promise<AgentAssignment> {
     return this.update(assignmentId, (existing) => {
-      if (["reconciled", "failed", "blocked"].includes(existing.status) && existing.status === update.status) return existing;
+      if (["reconciled", "failed", "needs_human"].includes(existing.status) && existing.status === update.status) return existing;
       return AgentAssignmentSchema.parse({ ...existing, ...update, reconciledAt: new Date().toISOString() });
     }, `agent.assignment_${update.status}`);
   }

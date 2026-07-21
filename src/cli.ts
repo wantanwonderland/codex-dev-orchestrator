@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { Command } from "commander";
 import { resolve } from "node:path";
-import { approvePlan, initializeProject, startWorkflow, upgradeProject } from "./project.js";
-import { acquireLease, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, releaseLease, statusSummary, transitionWorkflow } from "./workflow.js";
+import { initializeProject, resetProject, startWorkflow, upgradeProject } from "./project.js";
+import { acquireLease, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary, transitionWorkflow } from "./workflow.js";
 import { AgentRoleSchema, ArtifactKindSchema, AssignmentStageSchema, WorkflowModeSchema, WorkflowTierSchema } from "./types.js";
 import { classifyRisk } from "./risk.js";
 import { validateWorkflowArtifacts } from "./artifacts.js";
@@ -21,7 +21,7 @@ function rootOf(options: { root?: string }): string {
 }
 
 const program = new Command();
-program.name("cdo").description("Durable Codex-only development orchestration").version("0.3.0");
+program.name("cdo").description("Autonomous, durable Codex development orchestration").version("0.4.0");
 
 async function serveDashboard(options: { open?: boolean; port?: string }): Promise<void> {
   const config = await loadDashboardConfig();
@@ -101,7 +101,7 @@ program
   .argument("<objective>")
   .requiredOption("--id <workflow-id>")
   .option("--tier <tier>", "small, normal, or large", "normal")
-  .option("--mode <mode>", "human_gated, local_auto, or remote_auto", "human_gated")
+  .option("--mode <mode>", "autonomous or remote_auto", "autonomous")
   .option("--root <path>")
   .action(async (objective, options) => {
     await startWorkflow(rootOf(options), {
@@ -110,7 +110,7 @@ program
       tier: WorkflowTierSchema.parse(options.tier),
       mode: WorkflowModeSchema.parse(options.mode),
     });
-    console.log(`Workflow ${options.id} is awaiting persisted plan approval`);
+    console.log(`Workflow ${options.id} started; next: ${options.tier === "small" ? "planning" : "repository and live-web research"}`);
   });
 
 program
@@ -122,15 +122,9 @@ program
     for (const path of result.recommended) console.log(`Review recommended template: ${path}`);
   });
 
-program
-  .command("approve-plan")
-  .argument("<workflow-id>")
-  .requiredOption("--by <identity>")
-  .option("--root <path>")
-  .action(async (workflowId, options) => {
-    await approvePlan(rootOf(options), workflowId, options.by);
-    console.log(`Approved the persisted plan for ${workflowId}`);
-  });
+program.command("record-decisions").argument("<workflow-id>").option("--root <path>").action(async (workflowId, options) => console.log(JSON.stringify(await recordBrainstormDecisions(rootOf(options), workflowId), null, 2)));
+program.command("resume").argument("<workflow-id>").requiredOption("--to <status>").option("--root <path>").action(async (workflowId, options) => console.log(JSON.stringify(await resumeWorkflow(rootOf(options), workflowId, options.to), null, 2)));
+program.command("reset-project").option("--root <path>").requiredOption("--confirm", "confirm removal of CDO workflow artifacts and runtime only").action(async (options) => { await resetProject(rootOf(options)); console.log("Removed CDO workflow artifacts and runtime; project configuration and agents were preserved"); });
 
 program
   .command("status")
@@ -152,6 +146,7 @@ program
   .requiredOption("--input <relative-path>")
   .requiredOption("--output <relative-path>")
   .requiredOption("--kind <artifact-kind>")
+  .option("--task <task-id>")
   .option("--source-commit <sha>")
   .option("--target-commit <sha>")
   .option("--root <path>")
@@ -163,6 +158,7 @@ program
       inputPath: options.input,
       outputPath: options.output,
       expectedKind: ArtifactKindSchema.parse(options.kind),
+      taskId: options.task,
       sourceCommit: options.sourceCommit,
       targetCommit: options.targetCommit,
     });

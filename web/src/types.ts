@@ -1,6 +1,6 @@
 export type Health = "healthy" | "warning" | "critical" | "offline";
 export type Coverage = "exact" | "backfilled" | "partial" | "offline";
-export type WorkflowStatus = "awaiting approval" | "executing" | "reviewing" | "blocked" | "complete";
+export type WorkflowStatus = "researching" | "brainstorming" | "planning" | "executing" | "diagnosing" | "reviewing" | "needs human" | "complete";
 
 export interface ProjectSummary {
   id: string;
@@ -42,7 +42,7 @@ export interface ProjectDetail extends ProjectSummary {
 export interface WorkflowTask {
   id: string;
   title: string;
-  status: "complete" | "running" | "queued" | "blocked";
+  status: "complete" | "running" | "queued" | "partial" | "needs human";
   role: string;
   model: string;
   effort: string;

@@ -13,6 +13,7 @@ export async function selfDoctor(): Promise<string[]> {
     ".codex-plugin/plugin.json",
     "hooks/hooks.json",
     "skills/orchestrating-development/SKILL.md",
+    "agents/researcher.toml",
     "agents/planner.toml",
     "agents/reviewer.toml",
     "dist/mcp.js",
@@ -28,17 +29,17 @@ export async function selfDoctor(): Promise<string[]> {
 
 export async function projectDoctor(projectRoot: string): Promise<string[]> {
   await loadProjectConfig(projectRoot);
-  const checks = [".codex/workflow.toml", ".codex/cdo-managed.json", ".codex/agents/planner.toml", ".codex/agents/reviewer.toml"];
+  const checks = [".codex/workflow.toml", ".codex/cdo-managed.json", ".codex/agents/researcher.toml", ".codex/agents/planner.toml", ".codex/agents/reviewer.toml"];
   for (const path of checks) {
     try {
       await access(join(projectRoot, path));
     } catch (error) {
-      if (path === ".codex/cdo-managed.json") throw new Error("Project agent templates predate CDO 0.3.0; run cdo upgrade-project");
+      if (path === ".codex/cdo-managed.json") throw new Error("Project agent templates predate CDO 0.4.0; run cdo upgrade-project");
       throw error;
     }
   }
   const managed = JSON.parse(await readFile(join(projectRoot, ".codex/cdo-managed.json"), "utf8"));
-  if (managed.version !== "0.3.0") throw new Error("Project agent templates are outdated; run cdo upgrade-project");
+  if (managed.version !== "0.4.0") throw new Error("Project agent templates are outdated; run cdo upgrade-project");
   const runtimeRoot = workflowRuntimeRoot(projectRoot);
   for (const entry of await readdir(runtimeRoot, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;

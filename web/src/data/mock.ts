@@ -29,7 +29,7 @@ export const overviewMock: OverviewData = {
     {
       id: "relay-service", name: "Relay Service", path: "~/work/relay-service", branch: "main",
       health: "offline", live: false, workflowId: "event-recovery", workflowName: "Event recovery hardening",
-      phase: "Remediation", status: "blocked", developed: "Idempotent event replay and dead-letter audit", role: "fixer",
+      phase: "Safety gate", status: "needs human", developed: "Production migration requires explicit authority", role: "coordinator",
       model: "gpt-5.6-terra", updatedAt: ago(196), tokens: 92340, progress: 74, coverage: "offline",
     },
     {

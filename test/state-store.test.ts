@@ -5,49 +5,44 @@ import { describe, expect, it } from "vitest";
 import { StateStore } from "../src/state-store.js";
 import { recordAgentFailure, recordAgentSuccess } from "../src/workflow.js";
 
-describe("StateStore", () => {
-  it("persists atomic state and append-only events", async () => {
+describe("StateStore v2", () => {
+  it("starts normal work in research and persists append-only events", async () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-state-"));
     const store = new StateStore(root, "wf-1");
-    const state = await store.create({ objective: "ship feature", tier: "normal", mode: "human_gated" });
-    await store.transition(state, "awaiting_plan_approval", "plan.created");
-
-    const loaded = await store.load();
-    expect(loaded.status).toBe("awaiting_plan_approval");
-    const events = (await readFile(join(root, ".codex/workflow-runtime/wf-1/events.jsonl"), "utf8")).trim().split("\n");
-    expect(events).toHaveLength(2);
+    const state = await store.create({ objective: "ship feature", tier: "normal", mode: "autonomous" });
+    const next = await store.transition(state, "brainstorming", "research.completed");
+    expect(next.status).toBe("brainstorming");
+    expect((await readFile(join(root, ".codex/workflow-runtime/wf-1/events.jsonl"), "utf8")).trim().split("\n")).toHaveLength(2);
   });
 
-  it("refuses implementation before explicit plan approval", async () => {
+  it("lets small work plan immediately", async () => {
+    const root = await mkdtemp(join(tmpdir(), "cdo-state-"));
+    const state = await new StateStore(root, "wf-small").create({ objective: "small fix", tier: "small", mode: "autonomous" });
+    expect(state).toMatchObject({ status: "planning", researchComplete: true, decisionsComplete: true });
+  });
+
+  it("routes the third repeated operational failure to diagnosis instead of a human", async () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-state-"));
     const store = new StateStore(root, "wf-2");
-    const state = await store.create({ objective: "ship feature", tier: "normal", mode: "human_gated" });
-    await expect(store.transition(state, "executing", "execution.started")).rejects.toThrow(/plan approval/);
+    await store.create({ objective: "ship feature", tier: "normal", mode: "autonomous" });
+    expect((await recordAgentFailure(root, "wf-2", "task", "same failure")).retry).toBe(true);
+    expect((await recordAgentFailure(root, "wf-2", "task", "same failure")).retry).toBe(true);
+    const third = await recordAgentFailure(root, "wf-2", "task", "same failure");
+    expect(third).toMatchObject({ retry: false, diagnose: true, state: { status: "diagnosing" } });
+    await recordAgentSuccess(root, "wf-2", "task");
+    expect((await store.load()).operationFailures.task).toBeUndefined();
   });
 
-  it("allows at most two remediation rounds", async () => {
+  it("does not impose a fixed remediation-round ceiling", async () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-state-"));
     const store = new StateStore(root, "wf-3");
-    let state = await store.create({ objective: "ship feature", tier: "normal", mode: "human_gated" });
-    state = await store.save({ ...state, status: "reviewing", planApproval: { approvedBy: "human", approvedAt: new Date().toISOString(), planSha256: "a".repeat(64) } }, "test.setup");
-    state = await store.transition(state, "remediating", "round.one");
-    expect(state.remediationRounds).toBe(1);
-    state = await store.transition(state, "reviewing", "review.one");
-    state = await store.transition(state, "remediating", "round.two");
-    expect(state.remediationRounds).toBe(2);
-    state = await store.transition(state, "reviewing", "review.two");
-    await expect(store.transition(state, "remediating", "round.three")).rejects.toThrow(/maximum of 2/);
-  });
-
-  it("allows one fresh-session retry per operation and then blocks", async () => {
-    const root = await mkdtemp(join(tmpdir(), "cdo-state-"));
-    const store = new StateStore(root, "wf-4");
-    await store.create({ objective: "ship feature", tier: "normal", mode: "human_gated" });
-    expect((await recordAgentFailure(root, "wf-4", "task-1-review", "malformed output")).retry).toBe(true);
-    const second = await recordAgentFailure(root, "wf-4", "task-1-review", "timeout");
-    expect(second.retry).toBe(false);
-    expect(second.state.status).toBe("blocked");
-    await recordAgentSuccess(root, "wf-4", "task-1-review");
-    expect((await store.load()).operationFailures["task-1-review"]).toBeUndefined();
+    let state = await store.create({ objective: "ship", tier: "small", mode: "autonomous" });
+    state = await store.transition(state, "executing", "plan.ready");
+    state = await store.transition(state, "reviewing", "review.started");
+    for (let index = 0; index < 4; index += 1) {
+      state = await store.transition(state, "remediating", `fix.${index}`);
+      state = await store.transition(state, "reviewing", `review.${index}`);
+    }
+    expect(state.status).toBe("reviewing");
   });
 });

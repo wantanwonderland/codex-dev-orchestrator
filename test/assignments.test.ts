@@ -13,7 +13,7 @@ async function setup() {
   await mkdir(join(root, ".codex/workflows/wf-1/tasks"), { recursive: true });
   await mkdir(join(root, ".codex/workflows/wf-1/reports"), { recursive: true });
   await writeFile(join(root, ".codex/workflows/wf-1/tasks/task-1.md"), "task");
-  await new StateStore(root, "wf-1").create({ objective: "ship", tier: "normal", mode: "local_auto" });
+  await new StateStore(root, "wf-1").create({ objective: "ship", tier: "normal", mode: "autonomous" });
   return { root, store: new AssignmentStore(root, "wf-1") };
 }
 
@@ -120,7 +120,7 @@ describe("agent assignments", () => {
     await store.bindStarted("executor", "agent-1");
     await store.bindStopped("executor", { agentId: "agent-1" });
     await writeFile(join(root, ".codex/workflows/wf-1/reports/task-1.md"), renderArtifact({
-      schema: "cdo/v1",
+      schema: "cdo/v2",
       kind: "executor-report",
       workflow_id: "wf-1",
       status: "complete",

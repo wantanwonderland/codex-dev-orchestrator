@@ -23,7 +23,7 @@ try {
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/api/health`);
-      if (response.ok && (await response.json()).version === "0.3.0") {
+      if (response.ok && (await response.json()).version === "0.4.0") {
         const status = spawnSync(process.execPath, [join(root, "dist", "cli.js"), "dashboard", "status", "--port", String(port)], { env: { ...process.env, HOME: home, CODEX_HOME: join(home, ".codex"), CDO_DASHBOARD_HOME: join(home, ".cdo") }, encoding: "utf8" });
         if (status.status !== 0 || !JSON.parse(status.stdout).running) throw new Error(`Custom-port status failed\n${status.stderr || status.stdout}`);
         console.log("packaged dashboard smoke test OK (native SQLite and static UI)");

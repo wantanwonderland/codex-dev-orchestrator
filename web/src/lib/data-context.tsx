@@ -83,12 +83,12 @@ export function productionFallback<T>(endpoint: string, fallback: T): T {
   if (endpoint.startsWith("/api/projects/")) return {
     ...(fallback as Record<string, unknown>), id: "unavailable", name: "Monitoring unavailable", path: "", branch: "unknown",
     health: "offline", live: false, workflowId: "none", workflowName: "No workflow data", phase: "offline",
-    status: "blocked", developed: "No live dashboard data", role: "unavailable", model: "unavailable", tokens: 0,
+    status: "needs human", developed: "No live dashboard data", role: "unavailable", model: "unavailable", tokens: 0,
     progress: 0, coverage: "offline", history: [], tasks: { complete: 0, total: 0, blocked: 0 },
   } as T;
   if (endpoint.startsWith("/api/workflows/")) return {
     ...(fallback as Record<string, unknown>), id: "unavailable", name: "Monitoring unavailable", projectId: "unavailable",
-    projectName: "Dashboard offline", objective: "No live workflow data", status: "blocked", phase: "offline",
+    projectName: "Dashboard offline", objective: "No live workflow data", status: "needs human", phase: "offline",
     phases: [], tasks: [], assignments: [], history: [],
   } as T;
   return fallback;

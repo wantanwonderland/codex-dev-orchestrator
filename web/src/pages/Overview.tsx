@@ -12,7 +12,7 @@ import type { OverviewData } from "../types";
 export function Overview() {
   const { data } = useApiData<OverviewData>("/api/overview", fallbacks.overviewMock);
   const active = data.projects.filter((p) => p.status !== "complete").length;
-  const blocked = data.projects.filter((p) => p.status === "blocked").length;
+  const blocked = data.projects.filter((p) => p.status === "needs human").length;
   const projectTokens = data.projects.reduce((sum, p) => sum + p.tokens, 0);
   const tokens = data.tokenTotals?.totalTokens ?? projectTokens;
   const allocated = data.tokenTotals?.allocatedTokens ?? projectTokens;
@@ -24,7 +24,7 @@ export function Overview() {
     <section className="metric-grid" aria-label="Fleet summary">
       <Metric label="Registered projects" value={data.projects.length} detail={`${data.projects.filter((p) => p.live).length} reporting live`} icon={Blocks} />
       <Metric label="Active workflows" value={active} detail={`${data.projects.filter((p) => p.status === "reviewing").length} awaiting review`} icon={Activity} tone="teal" />
-      <Metric label="Blocked" value={blocked} detail={blocked ? "Needs coordinator action" : "No active blockers"} icon={ShieldAlert} tone={blocked ? "red" : "neutral"} />
+      <Metric label="Human gates" value={blocked} detail={blocked ? "Safety or product decision required" : "Autonomy is uninterrupted"} icon={ShieldAlert} tone={blocked ? "red" : "neutral"} />
       <Metric label="Observed tokens" value={formatTokens(tokens)} detail={`${formatTokens(allocated)} allocated`} icon={Zap} tone="amber" />
     </section>
 
@@ -52,7 +52,7 @@ export function Overview() {
         <div className="section-heading"><div><span className="kicker">Queue</span><h2>Needs attention</h2></div><CircleAlert size={18} /></div>
         <div className="attention-list">{attention.map((project) => <Link to={`/projects/${project.id}`} className="attention-row" key={project.id}>
           <div className={`attention-row__icon attention-row__icon--${project.health}`}><Layers3 size={15} /></div>
-          <div><strong>{project.name}</strong><span>{project.status === "blocked" ? "Workflow is blocked in remediation" : project.health === "offline" ? "Runtime stream is unavailable" : `${project.phase} requires attention`}</span></div>
+          <div><strong>{project.name}</strong><span>{project.status === "needs human" ? "A typed safety or product gate needs a decision" : project.health === "offline" ? "Runtime stream is unavailable" : `${project.phase} requires attention`}</span></div>
           <StatusBadge status={project.health === "healthy" ? project.status : project.health} />
           <ArrowRight size={15} />
         </Link>)}</div>

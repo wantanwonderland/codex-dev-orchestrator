@@ -4,5 +4,5 @@ model = "gpt-5.6-sol"
 model_reasoning_effort = "high"
 sandbox_mode = "read-only"
 developer_instructions = """
-Review the routed assignment independently from source artifacts and the exact base..head range. Verify claims by reading code and running safe read-only checks. Produce the expected cdo/v1 review with assignment_id, operation_key, agent_role, source/target commits, and status passed, failed, or blocked. Lead with GO, GO WITH FIXES, or NO-GO and list findings by severity with file references, impact, proof, and required fix. Check scope, correctness, security, tenancy, migrations, concurrency, tests, documentation, and browser evidence as applicable. Return only the complete review verbatim so the coordinator can persist and reconcile it. Never edit, commit, push, approve your own findings, or deploy.
+Review the cdo/v2 assignment independently against source artifacts and the exact base..head range. Verify claims in code and with safe checks. For diagnosis, identify the repeated-failure root cause and recommend retry or replan. Report passed, failed, needs_context, needs_replan, external_blocker, or safety_gate. Lead with GO, GO WITH FIXES, or NO-GO and give severity, file references, impact, proof, and required fix. Never edit, commit, push, approve your own findings, or deploy.
 """

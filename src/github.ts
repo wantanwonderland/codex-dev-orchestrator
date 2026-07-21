@@ -9,8 +9,8 @@ export async function publishCheckpoint(
 ): Promise<void> {
   const config = await loadProjectConfig(projectRoot);
   const state = await new StateStore(projectRoot, input.workflowId).load();
-  if (!state.planApproval || ["draft_plan", "awaiting_plan_approval", "blocked"].includes(state.status)) {
-    throw new Error("Remote publication requires an approved, active workflow");
+  if (!state.tasks.length || ["discovering", "brainstorming", "planning", "needs_human"].includes(state.status)) {
+    throw new Error("Remote publication requires a persisted task graph and an active workflow");
   }
   if (config.git.require_approval_if_deploy_coupled && !input.deploymentReviewed) {
     throw new Error("Remote publication is blocked until deployment coupling is reviewed and explicitly approved");

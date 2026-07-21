@@ -50,6 +50,6 @@ export function Workflow() {
       <div className="section-heading"><div><span className="kicker">Audit trail</span><h2>Durable history</h2></div><Layers3 size={18} /></div>
       <History events={data.history} />
     </section>
-    <div className="monitor-banner"><strong>Monitor-only workflow</strong><span>Approval, retry, reconciliation, and phase transitions remain in the coordinator runtime.</span><ArrowRight size={16} /></div>
+    <div className="monitor-banner"><strong>Autonomous workflow</strong><span>Research, retries, diagnosis, replanning, review, and remediation continue automatically; only typed safety and product gates pause.</span><ArrowRight size={16} /></div>
   </div>;
 }

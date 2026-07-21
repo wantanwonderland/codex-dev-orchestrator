@@ -741,7 +741,7 @@
               </div>
               <div class="step">
                 <span class="num">3</span>
-                <div><b>Start a workflow</b><small>`cdo start` creates draft or awaiting-approval artifacts for small, normal, or large work.</small></div>
+                <div><b>Start a workflow</b><small>`cdo start` sends normal and large work to repository plus live-web research; small work starts planning.</small></div>
               </div>
               <div class="step">
                 <span class="num">4</span>
@@ -759,7 +759,7 @@
         </div>
         <div class="flow-board">
           <div class="flow-toolbar" role="tablist" aria-label="Lifecycle stages">
-            <button class="flow-tab" role="tab" aria-selected="true" data-stage="plan">Plan gate</button>
+            <button class="flow-tab" role="tab" aria-selected="true" data-stage="plan">Discovery path</button>
             <button class="flow-tab" role="tab" aria-selected="false" data-stage="handoff">Handoff loop</button>
             <button class="flow-tab" role="tab" aria-selected="false" data-stage="write">Writer lease</button>
             <button class="flow-tab" role="tab" aria-selected="false" data-stage="review">Review gate</button>
@@ -768,19 +768,19 @@
           <div class="flow-canvas">
             <div class="lifecycle" aria-label="End-to-end process flow">
               <article class="life-node" data-group="plan">
-                <code>draft</code>
+                <code>discovering</code>
                 <strong>Human objective</strong>
                 <p>The user describes the desired change in one Codex terminal. The coordinator starts or resumes durable state.</p>
               </article>
               <article class="life-node" data-group="plan">
-                <code>awaiting_plan_approval</code>
-                <strong>Planner artifact</strong>
-                <p>A planning assignment binds the planner to an exact input, output, operation key, and artifact contract.</p>
+                <code>brainstorming</code>
+                <strong>Research and decisions</strong>
+                <p>Repository and current web evidence ground an interactive conversation about material product choices.</p>
               </article>
               <article class="life-node" data-group="plan">
-                <code>approved</code>
-                <strong>Human approval</strong>
-                <p>The exact persisted plan is approved. CDO stores approver, timestamp, and SHA-256.</p>
+                <code>planning</code>
+                <strong>Detailed task graph</strong>
+                <p>The planner creates focused dependency-ordered task briefs; execution starts without a routine approval pause.</p>
               </article>
               <article class="life-node" data-group="write">
                 <code>executing</code>

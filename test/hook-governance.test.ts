@@ -13,17 +13,19 @@ async function writeState(root: string, status: "executing" | "complete", withLe
   await mkdir(runtime, { recursive: true });
   const now = new Date().toISOString();
   await writeFile(join(runtime, "state.json"), JSON.stringify({
-    schema: "cdo-state/v1",
+    schema: "cdo-state/v2",
     workflowId: "wf-1",
     projectRoot: root,
     objective: "test hook governance",
     tier: "normal",
-    mode: "human_gated",
+    mode: "autonomous",
     status,
     phase: "phase-1",
     writerLease: withLease ? { role: "executor", sessionId: "writer-session", acquiredAt: now } : undefined,
-    retryCount: 0,
-    remediationRounds: 0,
+    researchComplete: true,
+    decisionsComplete: true,
+    planRevision: 1,
+    tasks: [],
     operationFailures: {},
     createdAt: now,
     updatedAt: now,

@@ -2,38 +2,9 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { approvePlan, initializeProject, startWorkflow, upgradeProject } from "../src/project.js";
-import { createAgentAssignment, reconcileAgentAssignment, statusSummary, transitionWorkflow } from "../src/workflow.js";
-import { AssignmentStore } from "../src/assignments.js";
-import { renderArtifact } from "../src/frontmatter.js";
+import { initializeProject, resetProject, startWorkflow, upgradeProject } from "../src/project.js";
+import { statusSummary } from "../src/workflow.js";
 import { projectDoctor } from "../src/doctor.js";
-
-async function reconcilePlan(root: string, workflowId: string): Promise<void> {
-  const assignment = await createAgentAssignment(root, workflowId, {
-    operationKey: "planning",
-    role: "planner",
-    stage: "planning",
-    inputPath: "spec.md",
-    outputPath: "plan.md",
-    expectedKind: "plan",
-  });
-  const assignments = new AssignmentStore(root, workflowId);
-  await assignments.bindStartedById(assignment.id, "planner-agent");
-  await assignments.bindStoppedById(assignment.id, "planner-agent");
-  const now = new Date().toISOString();
-  await writeFile(join(root, ".codex/workflows", workflowId, "plan.md"), renderArtifact({
-    schema: "cdo/v1",
-    kind: "plan",
-    workflow_id: workflowId,
-    status: "awaiting_approval",
-    created_at: now,
-    updated_at: now,
-    assignment_id: assignment.id,
-    operation_key: assignment.operationKey,
-    agent_role: "planner",
-  }, "# Verified implementation plan\n\nImplement and test the requested feature."));
-  await reconcileAgentAssignment(root, workflowId, assignment.id);
-}
 
 describe("project initialization", () => {
   it("creates config, agents, tracked artifacts, and untracked runtime rules", async () => {
@@ -42,28 +13,31 @@ describe("project initialization", () => {
     await startWorkflow(root, { workflowId: "wf-demo", objective: "Build a feature", tier: "normal" });
 
     expect(await readFile(join(root, ".codex/workflow.toml"), "utf8")).toContain('coordinator = "gpt-5.6-terra"');
+    expect(await readFile(join(root, ".codex/workflow.toml"), "utf8")).toContain("allow_direct_local_access = true");
+    expect(await readFile(join(root, ".codex/agents/researcher.toml"), "utf8")).toContain('web_search = "live"');
     expect(await readFile(join(root, ".codex/agents/planner.toml"), "utf8")).toContain('model = "gpt-5.6-sol"');
     expect(await readFile(join(root, ".codex/workflows/wf-demo/spec.md"), "utf8")).toContain("Build a feature");
-    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.3.0"');
+    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.4.0"');
     expect(await readFile(join(root, ".gitignore"), "utf8")).toContain(".codex/workflow-runtime/");
-    expect((await statusSummary(root, "wf-demo")).coordination.nextAction).toBe("assign_planner");
+    expect((await statusSummary(root, "wf-demo")).coordination.nextAction).toBe("assign_researcher");
   });
 
-  it("invalidates approval when the persisted plan changes", async () => {
+  it("creates research and brainstorming artifacts without placeholder tasks", async () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-project-"));
     await initializeProject(root, { projectId: "demo", defaultBranch: "main" });
-    await startWorkflow(root, { workflowId: "wf-change", objective: "Build a feature", tier: "normal" });
-    await reconcilePlan(root, "wf-change");
-    await approvePlan(root, "wf-change", "human");
-    await writeFile(join(root, ".codex/workflows/wf-change/plan.md"), "changed after approval\n");
-    await expect(transitionWorkflow(root, "wf-change", "executing")).rejects.toThrow(/changed after approval/);
+    await startWorkflow(root, { workflowId: "wf-research", objective: "Build", tier: "normal" });
+    expect(await readFile(join(root, ".codex/workflows/wf-research/research.md"), "utf8")).toContain("current web sources");
+    expect(await readFile(join(root, ".codex/workflows/wf-research/decisions.md"), "utf8")).toContain("Brainstorming decisions");
+    await expect(readFile(join(root, ".codex/workflows/wf-research/tasks/task-1.md"), "utf8")).rejects.toThrow();
   });
 
-  it("rejects approval of the generated placeholder plan", async () => {
+  it("resets only managed workflow data", async () => {
     const root = await mkdtemp(join(tmpdir(), "cdo-project-"));
     await initializeProject(root, { projectId: "demo", defaultBranch: "main" });
-    await startWorkflow(root, { workflowId: "wf-placeholder", objective: "Build a feature", tier: "normal" });
-    await expect(approvePlan(root, "wf-placeholder", "human")).rejects.toThrow(/reconciled planner assignment/);
+    await startWorkflow(root, { workflowId: "wf-reset", objective: "Build", tier: "normal" });
+    await resetProject(root);
+    expect(await readFile(join(root, ".codex/workflow.toml"), "utf8")).toContain('id = "demo"');
+    await expect(readFile(join(root, ".codex/workflows/wf-reset/index.md"), "utf8")).rejects.toThrow();
   });
 
   it("rejects unsafe workflow IDs before creating directories", async () => {
@@ -82,7 +56,7 @@ describe("project initialization", () => {
     const result = await upgradeProject(root);
     expect(result.recommended).toContain(".codex/agents/coordinator.cdo-recommended.toml");
     expect(await readFile(coordinator, "utf8")).toContain("project customization");
-    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.3.0"');
+    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.4.0"');
     const repeated = await upgradeProject(root);
     expect(repeated.recommended).toContain(".codex/agents/coordinator.cdo-recommended.toml");
     expect(await readFile(coordinator, "utf8")).toContain("project customization");
@@ -105,7 +79,7 @@ Act as the workflow coordinator, not the primary implementer. Read .codex/workfl
 
     const result = await upgradeProject(root);
     expect(result.updated).toContain(".codex/agents/coordinator.toml");
-    expect(await readFile(coordinator, "utf8")).toContain("Create a durable assignment before every spawn");
+    expect(await readFile(coordinator, "utf8")).toContain("Own the workflow until it is complete");
   });
 
   it("restores a missing managed template during upgrade", async () => {

@@ -1,15 +1,15 @@
 {
   "name": "codex-dev-orchestrator",
-  "version": "0.3.0+codex.20260721074626",
-  "description": "Durable, review-gated software delivery with native Codex subagents.",
+  "version": "0.4.0+codex.local-20260721T090331Z",
+  "description": "Autonomous evidence-led delivery with research, brainstorming, typed recovery, review, and safety gates.",
   "author": {
     "name": "Wantan"
   },
   "skills": "./skills/",
   "interface": {
     "displayName": "Codex Dev Orchestrator",
-    "shortDescription": "Plan, execute, review, and verify with Codex",
-    "longDescription": "A durable Codex-only delivery workflow with Markdown handoffs, role-specific native subagents, writer leases, independent reviews, browser QA, and explicit production gates.",
+    "shortDescription": "Research, plan, deliver, and recover autonomously",
+    "longDescription": "A durable Codex delivery workflow with repository and live-web research, interactive brainstorming, detailed task decomposition, typed autonomous recovery, writer leases, independent review, browser QA, and narrow human safety gates.",
     "developerName": "Wantan",
     "category": "Productivity",
     "capabilities": [

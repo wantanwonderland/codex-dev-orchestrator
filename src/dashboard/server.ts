@@ -97,7 +97,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
   });
 
-  app.get("/api/health", async () => ({ ok: true, version: "0.3.0", lastEventAt }));
+  app.get("/api/health", async () => ({ ok: true, version: "0.4.0", lastEventAt }));
   app.get("/api/overview", async () => {
     const projects = database.listProjects().map((project) => projectSummary(database, project));
     const rateLimits = await queryCodexRateLimits();
@@ -126,7 +126,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     const project = database.getProject(workflow.projectId)!;
     const tasks = database.listTasks(project.id, workflow.workflowId);
     const sessions = database.listSessions(project.id);
-    const roles = ["planner", "executor", "reviewer", "fixer", "browser-verifier"];
+    const roles = ["researcher", "planner", "executor", "reviewer", "fixer", "browser-verifier"];
     return {
       id: workflow.workflowId,
       name: workflow.workflowId,
@@ -134,7 +134,7 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
       projectName: project.name,
       objective: `Durable workflow ${workflow.workflowId}`,
       tier: "tracked",
-      mode: "monitor-only",
+      mode: "autonomous",
       status: workflowStatus(workflow.status),
       phase: workflow.phase ?? "unknown",
       branch: project.defaultBranch ?? "unknown",
@@ -218,6 +218,10 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
   }
 
   const needsInitialDiscovery = database.listProjects().length === 0;
+  // Bind before a potentially large first discovery pass. The frontend keeps its
+  // event stream open and refreshes when reconciliation completes, rather than
+  // appearing offline while a registered workspace is being scanned.
+  await app.listen({ host, port });
   if (needsInitialDiscovery) await refresh();
   else await refreshTokens();
   if (options.watch !== false) {
@@ -231,7 +235,6 @@ export async function startDashboardServer(options: DashboardServerOptions = {})
     }
   }
   const interval = setInterval(() => void refresh().catch((error) => emit("dashboard.error", { message: errorMessage(error) })), options.reconcileIntervalMs ?? config.reconcileIntervalMs);
-  await app.listen({ host, port });
   if (!needsInitialDiscovery) scheduleRefresh();
   return {
     app,
@@ -265,7 +268,7 @@ function projectSummary(database: DashboardDatabase, project: ProjectRecord) {
     name: project.name,
     path: project.path,
     branch: project.defaultBranch ?? "unknown",
-    health: coverage === "offline" ? "offline" : tasks.some((task) => task.status === "blocked") ? "critical" : workflowStatus(workflow?.status) === "reviewing" ? "warning" : "healthy",
+    health: coverage === "offline" ? "offline" : workflowStatus(workflow?.status) === "needs human" ? "critical" : workflowStatus(workflow?.status) === "reviewing" ? "warning" : "healthy",
     live: coverage !== "offline",
     workflowId: workflow?.workflowId ?? "none",
     workflowName: workflow?.workflowId ?? "No workflow",
@@ -282,7 +285,7 @@ function projectSummary(database: DashboardDatabase, project: ProjectRecord) {
 }
 
 function taskCounts(tasks: TaskRecord[]) {
-  return { complete: tasks.filter((task) => ["complete", "completed", "reconciled", "succeeded", "approved"].includes(task.status ?? "")).length, total: tasks.length, blocked: tasks.filter((task) => task.status === "blocked").length };
+  return { complete: tasks.filter((task) => ["complete", "completed", "reconciled", "succeeded"].includes(task.status ?? "")).length, total: tasks.length, blocked: tasks.filter((task) => task.status === "needs_human").length };
 }
 
 function developedSummary(history: HistoryRecord[], workflow?: WorkflowRecord): string {
@@ -290,19 +293,23 @@ function developedSummary(history: HistoryRecord[], workflow?: WorkflowRecord): 
   return artifact?.summary ?? (workflow ? `${workflow.workflowId} is ${workflowStatus(workflow.status)}` : "No tracked development yet");
 }
 
-function workflowStatus(status?: string | null): "awaiting approval" | "executing" | "reviewing" | "blocked" | "complete" {
-  if (!status) return "awaiting approval";
-  if (status.includes("block") || status.includes("fail")) return "blocked";
+function workflowStatus(status?: string | null): "researching" | "brainstorming" | "planning" | "executing" | "diagnosing" | "reviewing" | "needs human" | "complete" {
+  if (!status) return "planning";
+  if (status === "needs_human") return "needs human";
+  if (status.includes("discover") || status.includes("research")) return "researching";
+  if (status.includes("brainstorm")) return "brainstorming";
+  if (status.includes("diagnos")) return "diagnosing";
   if (status.includes("review") || status.includes("verification")) return "reviewing";
   if (status.includes("complete") || status.includes("merged") || status === "done") return "complete";
-  if (status.includes("approval") || status === "draft" || status === "planned") return "awaiting approval";
+  if (status.includes("plan") || status === "draft") return "planning";
   return "executing";
 }
 
-function workflowTaskStatus(status: string | null): "complete" | "running" | "queued" | "blocked" {
-  if (status === "blocked" || status === "failed") return "blocked";
-  if (["complete", "completed", "reconciled", "succeeded", "approved"].includes(status ?? "")) return "complete";
-  if (["running", "active", "started", "stopped"].includes(status ?? "")) return "running";
+function workflowTaskStatus(status: string | null): "complete" | "running" | "queued" | "partial" | "needs human" {
+  if (status === "needs_human") return "needs human";
+  if (["partial", "failed", "retryable_failure", "needs_context"].includes(status ?? "")) return "partial";
+  if (["complete", "completed", "reconciled", "succeeded"].includes(status ?? "")) return "complete";
+  if (["running", "active", "started", "stopped", "reviewing", "remediating"].includes(status ?? "")) return "running";
   return "queued";
 }
 
@@ -319,14 +326,14 @@ function assignmentView(role: string, tasks: TaskRecord[], sessions: SessionReco
 }
 
 function historyView(event: HistoryRecord) {
-  return { id: String(event.id), at: event.occurredAt ?? "", actor: event.type.startsWith("agent.") ? "agent" : "system", event: event.summary, evidence: event.sourcePath, outcome: event.status === "blocked" || event.status === "failed" ? "warning" : event.status ? "success" : "info" };
+  return { id: String(event.id), at: event.occurredAt ?? "", actor: event.type.startsWith("agent.") ? "agent" : "system", event: event.summary, evidence: event.sourcePath, outcome: event.status === "needs_human" || event.status === "failed" ? "warning" : event.status ? "success" : "info" };
 }
 
 function phaseRail(workflow: WorkflowRecord) {
-  const names = ["Planning", "Approval", "Implementation", "Review", "Remediation", "Browser verification"];
+  const names = ["Research", "Brainstorm", "Planning", "Implementation", "Review", "Browser verification"];
   const status = workflowStatus(workflow.status);
   const explicit = names.findIndex((name) => workflow.phase?.toLowerCase().includes(name.split(" ")[0].toLowerCase()));
-  const active = explicit >= 0 ? explicit : status === "awaiting approval" ? 1 : status === "executing" ? 2 : status === "reviewing" ? 3 : status === "blocked" ? 4 : 5;
+  const active = explicit >= 0 ? explicit : status === "researching" ? 0 : status === "brainstorming" ? 1 : status === "planning" ? 2 : status === "executing" || status === "diagnosing" ? 3 : status === "reviewing" ? 4 : 5;
   const complete = status === "complete";
   return names.map((name, index) => ({ name, status: complete || index < active ? "complete" : index === active ? "active" : "queued" }));
 }
