@@ -13,6 +13,9 @@ export async function acquireLease(projectRoot: string, workflowId: string, role
   const store = new StateStore(projectRoot, workflowId);
   const state = await store.load();
   const writerRole = WriterRoleSchema.parse(role);
+  if (sessionId.startsWith("/")) {
+    throw new Error("Writer lease requires the Codex parent session ID from SubagentStart, not an agent routing path");
+  }
   const writerLease = acquireWriterLease(state.writerLease, writerRole, sessionId);
   const next = await store.save({ ...state, writerLease }, "writer.acquired", { role, sessionId });
   try {

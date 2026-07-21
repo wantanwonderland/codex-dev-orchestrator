@@ -44,7 +44,7 @@ describe("project initialization", () => {
     expect(await readFile(join(root, ".codex/workflow.toml"), "utf8")).toContain('coordinator = "gpt-5.6-terra"');
     expect(await readFile(join(root, ".codex/agents/planner.toml"), "utf8")).toContain('model = "gpt-5.6-sol"');
     expect(await readFile(join(root, ".codex/workflows/wf-demo/spec.md"), "utf8")).toContain("Build a feature");
-    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.2.0"');
+    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.3.0"');
     expect(await readFile(join(root, ".gitignore"), "utf8")).toContain(".codex/workflow-runtime/");
     expect((await statusSummary(root, "wf-demo")).coordination.nextAction).toBe("assign_planner");
   });
@@ -82,7 +82,7 @@ describe("project initialization", () => {
     const result = await upgradeProject(root);
     expect(result.recommended).toContain(".codex/agents/coordinator.cdo-recommended.toml");
     expect(await readFile(coordinator, "utf8")).toContain("project customization");
-    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.2.0"');
+    expect(await readFile(join(root, ".codex/cdo-managed.json"), "utf8")).toContain('"version": "0.3.0"');
     const repeated = await upgradeProject(root);
     expect(repeated.recommended).toContain(".codex/agents/coordinator.cdo-recommended.toml");
     expect(await readFile(coordinator, "utf8")).toContain("project customization");

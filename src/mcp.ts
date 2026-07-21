@@ -9,7 +9,7 @@ import { assessCompletionGate } from "./gates.js";
 import { persistWorkflowArtifact } from "./artifacts.js";
 
 const server = new McpServer(
-  { name: "codex-dev-orchestrator", version: "0.2.0" },
+  { name: "codex-dev-orchestrator", version: "0.3.0" },
   {
     instructions:
       "Create a durable assignment before every native subagent spawn, wait for the child, reconcile its cdo/v1 artifact and Git evidence, then follow nextAction. Use tracked .codex/workflows Markdown as the handoff contract and runtime state only for coordination. Require explicit plan approval before execution. Only an executor or fixer holding the writer lease may mutate source. Deployment and production mutations always require explicit human instruction.",

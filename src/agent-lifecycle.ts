@@ -3,6 +3,7 @@ import { dirname, join, parse } from "node:path";
 import { AssignmentStore } from "./assignments.js";
 import { StateStore } from "./state-store.js";
 import { AgentRoleSchema, type AgentAssignment, type AgentRole } from "./types.js";
+import { workflowRuntimeRoot } from "./project-root.js";
 
 export interface AgentLifecycleInput {
   hook_event_name?: string;
@@ -62,6 +63,13 @@ function parseRole(value?: string): AgentRole | undefined {
 }
 
 async function findRuntimeRoot(start: string): Promise<string | undefined> {
+  const canonical = workflowRuntimeRoot(start);
+  try {
+    await readdir(canonical);
+    return canonical;
+  } catch {
+    // Fall back to walking upward for initialized non-Git projects.
+  }
   let current = start;
   const filesystemRoot = parse(current).root;
   while (true) {

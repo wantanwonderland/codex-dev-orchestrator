@@ -2,6 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { dirname, join, parse } from "node:path";
 import type { GovernanceContext } from "./hook-policy.js";
 import { WorkflowStateSchema } from "./types.js";
+import { workflowRuntimeRoot } from "./project-root.js";
 
 const TERMINAL_STATUSES = new Set(["blocked", "complete"]);
 
@@ -27,6 +28,13 @@ export async function findRelevantGovernance(cwd: string, sessionId?: string): P
 }
 
 async function findRuntimeRoot(start: string): Promise<string | undefined> {
+  const canonical = workflowRuntimeRoot(start);
+  try {
+    await readdir(canonical);
+    return canonical;
+  } catch {
+    // Fall back to walking upward for initialized non-Git projects.
+  }
   let current = start;
   const filesystemRoot = parse(current).root;
   while (true) {

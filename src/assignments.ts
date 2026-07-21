@@ -3,6 +3,7 @@ import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArtifact } from "./frontmatter.js";
 import { StateStore } from "./state-store.js";
+import { workflowRuntimeRoot } from "./project-root.js";
 import {
   AgentAssignmentSchema,
   AgentRoleSchema,
@@ -53,7 +54,7 @@ export class AssignmentStore {
     workflowId: string,
   ) {
     this.workflowId = WorkflowIdSchema.parse(workflowId);
-    this.path = join(projectRoot, ".codex", "workflow-runtime", this.workflowId, "sessions.json");
+    this.path = join(workflowRuntimeRoot(projectRoot), this.workflowId, "sessions.json");
     this.lockPath = join(dirname(this.path), "sessions.lock");
   }
 

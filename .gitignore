@@ -3,5 +3,6 @@ dist/
 coverage/
 *.log
 .DS_Store
-.codex/workflow-runtime/
+.codex/
 browser-artifacts/
+.playwright-cli/

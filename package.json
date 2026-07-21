@@ -1,6 +1,6 @@
 {
   "name": "codex-dev-orchestrator",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Durable Codex-only development orchestration plugin",
   "type": "module",
   "license": "MIT",
@@ -18,35 +18,52 @@
     "README.md"
   ],
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/bundle-entrypoints.mjs",
+    "build": "node scripts/clean-dist.mjs && pnpm build:web && tsc -p tsconfig.json && node scripts/bundle-entrypoints.mjs",
+    "build:web": "vite build --config web/vite.config.ts",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
+    "test:web": "vitest run --config web/vite.config.ts",
     "test:watch": "vitest",
+    "dev:dashboard": "vite --config web/vite.config.ts",
     "validate:plugin": "python3 scripts/validate-plugin.py",
     "validate:skills": "python3 scripts/validate-skills.py",
     "validate:readme": "node scripts/validate-readme.mjs",
     "test:smoke": "node scripts/smoke-test.mjs",
     "test:mcp": "node scripts/smoke-mcp.mjs",
     "test:packaged-mcp": "node scripts/smoke-packaged-mcp.mjs",
+    "test:dashboard": "node scripts/smoke-dashboard.mjs",
     "install:local": "node scripts/install-local.mjs",
     "refresh:local": "node scripts/cachebust-local.mjs && pnpm build && pnpm install:local",
     "uninstall:local": "node scripts/uninstall-local.mjs",
-    "verify": "pnpm check && pnpm test && pnpm build && pnpm validate:plugin && pnpm validate:skills && pnpm validate:readme && pnpm test:smoke && pnpm test:mcp && pnpm test:packaged-mcp && node dist/cli.js doctor --self"
+    "verify": "pnpm check && pnpm test && pnpm test:web && pnpm build && pnpm validate:plugin && pnpm validate:skills && pnpm validate:readme && pnpm test:smoke && pnpm test:mcp && pnpm test:packaged-mcp && pnpm test:dashboard && node dist/cli.js doctor --self"
   },
   "dependencies": {
+    "@fastify/static": "^10.1.0",
     "@modelcontextprotocol/sdk": "^1.17.5",
+    "better-sqlite3": "^12.11.1",
+    "chokidar": "^5.0.0",
     "commander": "^14.0.1",
+    "fastify": "^5.10.0",
     "smol-toml": "^1.4.2",
     "yaml": "^2.8.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/jsdom": "^21.1.7",
     "@types/node": "^20.19.13",
-    "esbuild": "^0.25.10",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "esbuild": "^0.27.7",
     "jsdom": "^26.1.0",
+    "lucide-react": "^1.25.0",
     "mermaid": "^11.12.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-router-dom": "^7.18.1",
     "typescript": "^5.9.2",
+    "vite": "^8.1.5",
     "vitest": "^3.2.4"
   },
   "engines": {

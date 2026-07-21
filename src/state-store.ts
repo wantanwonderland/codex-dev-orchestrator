@@ -9,6 +9,7 @@ import {
   type WorkflowStatus,
   type WorkflowTier,
 } from "./types.js";
+import { workflowRuntimeRoot } from "./project-root.js";
 
 const TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
   draft_plan: ["awaiting_plan_approval", "blocked"],
@@ -32,7 +33,7 @@ export class StateStore {
     workflowId: string,
   ) {
     this.workflowId = WorkflowIdSchema.parse(workflowId);
-    this.runtimeDir = join(projectRoot, ".codex", "workflow-runtime", this.workflowId);
+    this.runtimeDir = join(workflowRuntimeRoot(projectRoot), this.workflowId);
     this.statePath = join(this.runtimeDir, "state.json");
     this.eventsPath = join(this.runtimeDir, "events.jsonl");
   }

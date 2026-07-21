@@ -10,13 +10,81 @@ import { projectDoctor, selfDoctor } from "./doctor.js";
 import { assessCompletionGate } from "./gates.js";
 import { deleteBrowserAuthState, issueBrowserAuthState } from "./credentials.js";
 import { mergePullRequest, publishCheckpoint } from "./github.js";
+import { spawn } from "node:child_process";
+import { addDashboardRoot, DASHBOARD_HOST, DASHBOARD_PORT, loadDashboardConfig, removeDashboardRoot } from "./dashboard/config.js";
+import { startDashboardServer } from "./dashboard/server.js";
+import { dashboardServiceStatus, installDashboardService, uninstallDashboardService } from "./dashboard/service.js";
+import { setupTelemetry, telemetryStatus } from "./dashboard/telemetry.js";
 
 function rootOf(options: { root?: string }): string {
   return resolve(options.root ?? process.cwd());
 }
 
 const program = new Command();
-program.name("cdo").description("Durable Codex-only development orchestration").version("0.2.0");
+program.name("cdo").description("Durable Codex-only development orchestration").version("0.3.0");
+
+async function serveDashboard(options: { open?: boolean; port?: string }): Promise<void> {
+  const config = await loadDashboardConfig();
+  const port = options.port ? Number.parseInt(options.port, 10) : config.port;
+  if (!Number.isInteger(port) || port < 1 || port > 65_535) throw new Error("--port must be a valid TCP port");
+  const url = `http://${DASHBOARD_HOST}:${port}`;
+  try {
+    const response = await fetch(`${url}/api/health`, { signal: AbortSignal.timeout(600) });
+    if (response.ok) {
+      if (options.open !== false) openBrowser(url);
+      console.log(`CDO dashboard already running at ${url}`);
+      return;
+    }
+  } catch { /* no healthy existing dashboard */ }
+  const running = await startDashboardServer({ port });
+  if (options.open !== false) openBrowser(running.url);
+  console.log(`CDO dashboard running at ${running.url}`);
+  await new Promise<void>((resolve) => {
+    const stop = () => void running.close().finally(resolve);
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+}
+
+function openBrowser(url: string): void {
+  const command = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const child = spawn(command, args, { detached: true, stdio: "ignore" });
+  child.unref();
+}
+
+const dashboard = program.command("dashboard").description("Monitor development across registered CDO projects");
+dashboard.option("--no-open", "do not open a browser").option("--port <port>", "loopback port", String(DASHBOARD_PORT)).action((options) => serveDashboard(options));
+const dashboardServe = dashboard.command("serve").option("--no-open", "do not open a browser").option("--port <port>", "loopback port", String(DASHBOARD_PORT));
+dashboardServe.action(() => serveDashboard(dashboard.opts()));
+dashboard.command("add-root").argument("<path>").action(async (path) => {
+  const config = await addDashboardRoot(path);
+  console.log(`Registered ${resolve(path)} (${config.roots.length} roots)`);
+});
+dashboard.command("remove-root").argument("<path>").action(async (path) => {
+  const config = await removeDashboardRoot(path);
+  console.log(`Removed ${resolve(path)} (${config.roots.length} roots remain)`);
+});
+dashboard.command("status").option("--port <port>", "loopback port").action(async (options) => {
+  const config = await loadDashboardConfig();
+  const port = Number.parseInt(dashboard.opts().port ?? options.port ?? String(config.port), 10);
+  let healthy = false;
+  try { healthy = (await fetch(`http://${config.host}:${port}/api/health`, { signal: AbortSignal.timeout(700) })).ok; } catch { /* offline */ }
+  console.log(JSON.stringify({ running: healthy, url: `http://${config.host}:${port}`, roots: config.roots, telemetry: await telemetryStatus(), service: await dashboardServiceStatus() }, null, 2));
+});
+dashboard.command("setup-otel").action(async () => {
+  const result = await setupTelemetry();
+  console.log(`Codex OTLP JSON telemetry configured in ${result.path}; restart active Codex sessions`);
+});
+dashboard.command("install-service").action(async () => console.log(`Installed dashboard service at ${await installDashboardService()}`));
+dashboard.command("uninstall-service").action(async () => { await uninstallDashboardService(); console.log("Uninstalled dashboard service"); });
+dashboard.command("purge").requiredOption("--before <iso-date>").requiredOption("--confirm").option("--port <port>", "loopback port").action(async (options) => {
+  const config = await loadDashboardConfig();
+  const port = Number.parseInt(dashboard.opts().port ?? options.port ?? String(config.port), 10);
+  const response = await fetch(`http://${config.host}:${port}/api/purge`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ before: options.before, confirm: options.confirm }) });
+  if (!response.ok) throw new Error(`Dashboard purge failed with HTTP ${response.status}`);
+  console.log(JSON.stringify(await response.json(), null, 2));
+});
 
 program
   .command("init")

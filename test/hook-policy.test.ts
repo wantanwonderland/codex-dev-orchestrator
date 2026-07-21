@@ -29,4 +29,12 @@ describe("hook policy", () => {
       ).allow,
     ).toBe(false);
   });
+
+  it("keeps direct workflow artifact writes behind the lease guard", () => {
+    expect(evaluateToolUse({
+      tool_name: "apply_patch",
+      session_id: "coordinator-session",
+      tool_input: { patch: "*** Begin Patch\n*** Update File: /repo/.codex/workflows/wf-1/plan.md\n*** End Patch" },
+    }, { active: true }).allow).toBe(false);
+  });
 });

@@ -29,6 +29,11 @@ async function setup(status: "executing" | "reviewing") {
 }
 
 describe("assignment reconciliation", () => {
+  it("rejects an agent routing path as writer-lease identity", async () => {
+    const { root } = await setup("executing");
+    await expect(acquireLease(root, "wf-1", "executor", "/root/executor-task")).rejects.toThrow(/parent session ID/);
+  });
+
   it("routes a completed executor handoff to review", async () => {
     const { root } = await setup("executing");
     const assignment = await createAgentAssignment(root, "wf-1", {

@@ -8,7 +8,7 @@ import { AssignmentStore } from "./assignments.js";
 import { WorkflowIdSchema, type WorkflowMode, type WorkflowTier } from "./types.js";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const CDO_VERSION = "0.2.0";
+const CDO_VERSION = "0.3.0";
 const AGENT_NAMES = ["coordinator", "planner", "executor", "reviewer", "fixer", "browser-verifier"] as const;
 const V011_AGENT_HASHES: Record<(typeof AGENT_NAMES)[number], string> = {
   "browser-verifier": "c48dc2dd83ee5a3f7c3a9a350bea55a00277520d2756c8548aa03d1ada84b389",

@@ -2,7 +2,7 @@
 
 Codex Dev Orchestrator (CDO) turns one interactive Codex terminal into the durable “brain” for a plan → build → review → fix → browser-verify workflow. It uses explicit role assignments, native Codex subagents, lifecycle notifications, repository-tracked Markdown handoffs, an untracked runtime journal, exclusive writer leases, and explicit human gates. It does not require an OpenAI API key when Codex CLI is signed in with a supported ChatGPT subscription.
 
-This repository is both the plugin source and the reference implementation. Version 0.2.x is intentionally local-first: install it from a personal marketplace, then use it to coordinate work in any local Git repository.
+This repository is both the plugin source and the reference implementation. Version 0.3.x is local-first: install it from a personal marketplace, use it to coordinate work in any local Git repository, and monitor all registered projects from one loopback-only dashboard.
 
 ## Why this exists
 
@@ -154,6 +154,45 @@ codex plugin list
 codex mcp get codex-dev-orchestrator
 cdo doctor --self
 ```
+
+## Monitor all development
+
+CDO 0.3 adds a local single-user dashboard for projects, workflows, assignments, durable history, detailed token usage, telemetry coverage, and Codex account rate-limit windows. It is monitor-only: workflow approvals, transitions, retries, and agent routing remain in Codex and the CLI. Only dashboard settings can register roots or purge indexed monitoring history.
+
+Register one or more parent directories and start the dashboard:
+
+```bash
+cdo dashboard add-root "$HOME/Documents/project"
+cdo dashboard setup-otel
+cdo dashboard
+```
+
+The server binds only to `http://127.0.0.1:47831`. `cdo dashboard` reuses an existing healthy process and opens the browser; use `cdo dashboard serve --no-open` for a foreground process without browser launch. On macOS, an optional user LaunchAgent keeps it running:
+
+```bash
+cdo dashboard install-service
+cdo dashboard status
+cdo dashboard uninstall-service
+```
+
+The dashboard discovers repositories containing `.codex/workflow.toml`, deduplicates Git worktrees by their common Git directory, watches workflow/runtime artifacts, and periodically reconciles missed events. Its SQLite index is stored at `~/.codex-dev-orchestrator/dashboard.sqlite` with user-only directory permissions. History remains until an explicitly confirmed purge.
+
+Token accounting uses two sources:
+
+- managed Codex OTLP JSON telemetry at `/v1/logs` triggers live reconciliation;
+- `~/.codex/state_5.sqlite` and rollout JSONL files provide historical backfill.
+
+Parent context copied into spawned subagents is subtracted before totals are aggregated. The UI reports input, cached input, output, reasoning output, total, allocated, and unallocated tokens, with `exact`, `backfilled`, `partial`, or `offline` coverage. Codex thread titles, prompts, responses, tool inputs, and tool outputs are not indexed. Existing unmanaged `[otel]` configuration is never overwritten.
+
+To update an existing project after installing CDO 0.3:
+
+```bash
+cd "$HOME/Documents/project/chat-llm"
+cdo upgrade-project
+cdo dashboard add-root "$HOME/Documents/project"
+```
+
+`upgrade-project` refreshes unchanged managed agent templates and writes `.cdo-recommended.toml` files beside locally customized templates instead of replacing them.
 
 ## Initialize a target project
 
@@ -330,7 +369,7 @@ cdo assign approved-content \
 
 The returned assignment ID goes into the child prompt and the artifact front matter. After native spawn returns its child ID, the coordinator binds it deterministically with `cdo bind-agent WORKFLOW ASSIGNMENT --event start --agent CHILD_ID`. The `SubagentStart` and `SubagentStop` hooks perform the same lifecycle updates when routing is unambiguous; explicit binding is the recovery path when several workflows have the same role queued. The coordinator keeps its turn active, waits for the child, binds `stop` if needed, and does not report a handoff as successful yet.
 
-The executor or fixer must acquire the exclusive writer lease using the actual Codex parent session ID:
+The executor or fixer must acquire the exclusive writer lease using the actual Codex parent session ID supplied by the `SubagentStart` hook. An agent routing path such as `/root/task-name` is not a session ID and is rejected:
 
 ```bash
 cdo acquire-writer approved-content --role executor --session session-123
@@ -345,7 +384,9 @@ cdo reconcile approved-content ASSIGNMENT_ID
 
 Reconciliation validates assignment identity, role, operation key, artifact kind and status, commit evidence, and released writer ownership. It returns `assign_reviewer`, `assign_fixer`, `assign_browser-verifier`, `continue_approved_plan`, `await_plan_approval`, `complete`, a one-time retry, or `human_reconciliation`. The coordinator follows that result immediately.
 
-The lease prevents a second executor/fixer session from becoming the authorized writer. Planner and reviewer agents are configured read-only. Native subagent hook events identify the parent thread, so the coordinator passes that parent session ID into the lease call and never overlaps a reviewer with a writer. Hook policy blocks common write tools when the parent thread does not own an active lease. Because hooks cannot distinguish every child path and do not cover every specialized tool, read-only agent configuration, sequential routing, Git diff review, and isolated worktrees remain required defense-in-depth.
+The lease prevents a second executor/fixer session from becoming the authorized writer. Planner and reviewer agents are configured read-only. Native subagent hook events identify the parent thread and tell executor/fixer agents the exact parent session ID to use. Hook policy blocks common write tools when the parent thread does not own an active lease. Coordinators persist returned planner/reviewer Markdown through the path-validating `persist_workflow_artifact` MCP tool rather than a generic write tool. Because hooks cannot distinguish every child path and do not cover every specialized tool, read-only agent configuration, sequential routing, Git diff review, and isolated worktrees remain required defense-in-depth.
+
+Runtime coordination files are canonical per Git repository. Commands and hooks invoked from the main checkout, a linked worktree, or a nested directory all read and write the main checkout's `.codex/workflow-runtime/**`; tracked workflow artifacts and source files remain relative to the active worktree.
 
 Every task matching one of these triggers receives an independent task review:
 
@@ -656,7 +697,7 @@ Run the profile adapter manually as the operating-system user, validate that it 
 
 ### Hook blocks an expected write
 
-Confirm the current agent is executor or fixer, its real session ID owns the lease, and the active workflow state is in execution or remediation. Use `/hooks` to inspect the source and output. Do not disable hooks merely to bypass a genuine ownership conflict.
+Confirm the current agent is executor or fixer, the lease contains the parent session ID printed by `SubagentStart` rather than its `/root/...` routing path, and the active workflow state is in execution or remediation. Compare `cdo status` from the main checkout and linked worktree; both must report the same canonical runtime state. Use `/hooks` to inspect the source and output. Do not disable hooks merely to bypass a genuine ownership conflict.
 
 ### Runtime state and Git disagree
 
