@@ -13,6 +13,9 @@ export const WorkflowStatusSchema = z.enum([
   "remediating",
   "browser_verification",
   "needs_human",
+  "controller_error",
+  "cancelled",
+  "superseded",
   "complete",
 ]);
 export const WriterRoleSchema = z.enum(["executor", "fixer"]);
@@ -30,13 +33,22 @@ export const AssignmentStageSchema = z.enum([
 export const AssignmentStatusSchema = z.enum(["queued", "running", "stopped", "reconciling", "reconciled", "failed", "needs_human"]);
 export const AssignmentOutcomeSchema = z.enum(["succeeded", "continue", "retry", "replan", "needs_human"]);
 export const TaskRiskSchema = z.enum(["normal", "high"]);
-export const TaskStatusSchema = z.enum(["pending", "ready", "running", "partial", "reviewing", "remediating", "complete"]);
+export const TaskStatusSchema = z.enum(["pending", "ready", "running", "evidence_pending", "partial", "diagnosing", "reviewing", "remediating", "complete"]);
+export const FailureClassSchema = z.enum(["implementation", "artifact_contract", "agent_runtime", "controller"]);
+export const DiagnosisRecommendationSchema = z.enum(["retry_executor", "repair_evidence", "assign_fixer", "assign_planner", "cancel_task", "request_human"]);
 export const HumanGateKindSchema = z.enum(["product_decision", "scope_expansion", "credentials", "destructive_action", "production", "merge", "external_blocker"]);
 
 export const WriterLeaseSchema = z.object({
   role: WriterRoleSchema,
   sessionId: z.string().min(1),
   acquiredAt: z.string().datetime(),
+});
+
+export const WorkflowBindingSchema = z.object({
+  worktreePath: z.string().min(1),
+  branch: z.string().min(1),
+  baseCommit: z.string().min(1),
+  commonGitDir: z.string().min(1),
 });
 
 export const WorkflowTaskSchema = z.object({
@@ -54,7 +66,7 @@ export const WorkflowTaskSchema = z.object({
 });
 
 export const WorkflowStateSchema = z.object({
-  schema: z.literal("cdo-state/v2"),
+  schema: z.union([z.literal("cdo-state/v2"), z.literal("cdo-state/v3")]),
   workflowId: WorkflowIdSchema,
   projectRoot: z.string().min(1),
   objective: z.string().min(1),
@@ -63,6 +75,13 @@ export const WorkflowStateSchema = z.object({
   status: WorkflowStatusSchema,
   phase: z.string().default("phase-1"),
   branch: z.string().optional(),
+  worktree: WorkflowBindingSchema.optional(),
+  diagnosisOrigin: z.object({
+    taskId: z.string().optional(),
+    previousStatus: WorkflowStatusSchema,
+    previousTaskStatus: TaskStatusSchema.optional(),
+    assignmentId: z.string().uuid().optional(),
+  }).optional(),
   researchComplete: z.boolean().default(false),
   decisionsComplete: z.boolean().default(false),
   planRevision: z.number().int().min(0).default(0),
@@ -98,6 +117,7 @@ export const ArtifactKindSchema = z.enum([
   "executor-report",
   "review",
   "browser-report",
+  "diagnosis",
 ]);
 
 export const ArtifactStatusSchema = z.enum([
@@ -133,6 +153,7 @@ export const ArtifactFrontmatterSchema = z.object({
   risk: TaskRiskSchema.optional(),
   review_required: z.boolean().optional(),
   customer_visible_ui: z.boolean().optional(),
+  diagnosis_recommendation: DiagnosisRecommendationSchema.optional(),
 });
 
 export type ArtifactFrontmatter = z.infer<typeof ArtifactFrontmatterSchema>;
@@ -153,6 +174,12 @@ export const AgentAssignmentSchema = z.object({
   status: AssignmentStatusSchema,
   agentId: z.string().min(1).optional(),
   writerLeaseSessionId: z.string().min(1).optional(),
+  worktreePath: z.string().min(1).optional(),
+  branch: z.string().min(1).optional(),
+  baseCommit: z.string().min(1).optional(),
+  headCommit: z.string().min(1).optional(),
+  failureClass: FailureClassSchema.optional(),
+  evidenceSourceAssignmentId: z.string().uuid().optional(),
   sourceCommit: z.string().min(1).optional(),
   targetCommit: z.string().min(1).optional(),
   assignedAt: z.string().datetime(),
@@ -168,7 +195,7 @@ export const AgentAssignmentSchema = z.object({
 });
 
 export const SessionLedgerSchema = z.object({
-  schema: z.literal("cdo-sessions/v2"),
+  schema: z.union([z.literal("cdo-sessions/v2"), z.literal("cdo-sessions/v3")]),
   workflowId: WorkflowIdSchema,
   assignments: z.array(AgentAssignmentSchema),
 });
@@ -187,6 +214,8 @@ export const ProjectConfigSchema = z.object({
     no_progress_limit: z.number().int().min(2).default(3),
     require_brainstorm_for: z.array(WorkflowTierSchema).default(["normal", "large"]),
     auto_commit: z.boolean(),
+    worktree_dir: z.string().default(".worktrees"),
+    branch_prefix: z.string().default("cdo"),
   }),
   browser: z.object({
     desktop_viewport: z.string(),

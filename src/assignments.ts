@@ -28,7 +28,7 @@ const STAGE_CONTRACT: Record<AssignmentStage, { role: AgentRole; kinds: Artifact
   research: { role: "researcher", kinds: ["research"] },
   planning: { role: "planner", kinds: ["plan", "task-brief"] },
   implementation: { role: "executor", kinds: ["executor-report"] },
-  diagnosis: { role: "reviewer", kinds: ["review"] },
+  diagnosis: { role: "reviewer", kinds: ["diagnosis"] },
   task_review: { role: "reviewer", kinds: ["review"] },
   phase_review: { role: "reviewer", kinds: ["review"] },
   remediation: { role: "fixer", kinds: ["executor-report"] },
@@ -45,6 +45,10 @@ export interface CreateAssignmentInput {
   expectedKind: ArtifactKind;
   sourceCommit?: string;
   targetCommit?: string;
+  baseCommit?: string;
+  headCommit?: string;
+  worktreePath?: string;
+  branch?: string;
 }
 
 export class AssignmentStore {
@@ -68,7 +72,7 @@ export class AssignmentStore {
       return ledger;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      return { schema: "cdo-sessions/v2", workflowId: this.workflowId, assignments: [] };
+      return { schema: "cdo-sessions/v3", workflowId: this.workflowId, assignments: [] };
     }
   }
 
@@ -168,6 +172,14 @@ export class AssignmentStore {
     }, `agent.assignment_${update.status}`);
   }
 
+  async recordHeadCommit(assignmentId: string, headCommit: string): Promise<AgentAssignment> {
+    return this.update(assignmentId, (existing) => AgentAssignmentSchema.parse({
+      ...existing,
+      headCommit,
+      targetCommit: headCommit,
+    }), "agent.assignment_head_recorded");
+  }
+
   async validateOutput(assignment: AgentAssignment, currentCommit?: string): Promise<ArtifactFrontmatter> {
     if (!["stopped", "reconciling"].includes(assignment.status)) {
       throw new Error(`Assignment ${assignment.id} must stop before reconciliation`);
@@ -179,10 +191,11 @@ export class AssignmentStore {
     if (frontmatter.assignment_id !== assignment.id) throw new Error("Assignment artifact identity mismatch");
     if (frontmatter.operation_key !== assignment.operationKey) throw new Error("Assignment artifact operation key mismatch");
     if (frontmatter.agent_role !== assignment.role) throw new Error("Assignment artifact role mismatch");
-    if (assignment.sourceCommit && frontmatter.source_commit !== assignment.sourceCommit) {
+    const expectedBase = assignment.baseCommit ?? assignment.sourceCommit;
+    if (expectedBase && frontmatter.source_commit !== expectedBase) {
       throw new Error("Assignment artifact source commit mismatch");
     }
-    const expectedTarget = assignment.targetCommit ?? currentCommit;
+    const expectedTarget = assignment.headCommit ?? assignment.targetCommit ?? currentCommit;
     if (expectedTarget && frontmatter.target_commit !== expectedTarget) {
       throw new Error("Assignment artifact target commit mismatch");
     }

@@ -2,7 +2,7 @@
 
 Codex Dev Orchestrator (CDO) is an autonomous, durable software-delivery plugin for Codex. It gives a coordinator a real state machine, repository-local evidence, role-specific fresh agents, exclusive writer leases, independent review, and live browser verification.
 
-CDO 0.4 removes routine approval pauses. A workflow continues by itself through research, planning, implementation, diagnosis, remediation, and verification. It asks a human only when judgment or authority genuinely cannot be delegated.
+CDO 0.5 removes routine approval pauses and starts every new workflow in a dedicated Git worktree. A workflow continues by itself through research, planning, implementation, diagnosis, remediation, and verification. It asks a human only when judgment or authority genuinely cannot be delegated.
 
 ## Flow
 

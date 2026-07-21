@@ -2,7 +2,7 @@
 import { Command } from "commander";
 import { resolve } from "node:path";
 import { initializeProject, resetProject, startWorkflow, upgradeProject } from "./project.js";
-import { acquireLease, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary, transitionWorkflow } from "./workflow.js";
+import { acquireLease, adoptWorkflowWorktree, bindAgentAssignment, createAgentAssignment, listAgentAssignments, reconcileAgentAssignment, recordBrainstormDecisions, releaseLease, resumeWorkflow, statusSummary } from "./workflow.js";
 import { AgentRoleSchema, ArtifactKindSchema, AssignmentStageSchema, WorkflowModeSchema, WorkflowTierSchema } from "./types.js";
 import { classifyRisk } from "./risk.js";
 import { validateWorkflowArtifacts } from "./artifacts.js";
@@ -21,7 +21,7 @@ function rootOf(options: { root?: string }): string {
 }
 
 const program = new Command();
-program.name("cdo").description("Autonomous, durable Codex development orchestration").version("0.4.0");
+program.name("cdo").description("Autonomous, durable Codex development orchestration").version("0.5.0");
 
 async function serveDashboard(options: { open?: boolean; port?: string }): Promise<void> {
   const config = await loadDashboardConfig();
@@ -104,13 +104,13 @@ program
   .option("--mode <mode>", "autonomous or remote_auto", "autonomous")
   .option("--root <path>")
   .action(async (objective, options) => {
-    await startWorkflow(rootOf(options), {
+    const binding = await startWorkflow(rootOf(options), {
       workflowId: options.id,
       objective,
       tier: WorkflowTierSchema.parse(options.tier),
       mode: WorkflowModeSchema.parse(options.mode),
     });
-    console.log(`Workflow ${options.id} started; next: ${options.tier === "small" ? "planning" : "repository and live-web research"}`);
+    console.log(`Workflow ${options.id} started in ${binding.worktreePath} on ${binding.branch}; next: ${options.tier === "small" ? "planning" : "repository and live-web research"}`);
   });
 
 program
@@ -123,6 +123,7 @@ program
   });
 
 program.command("record-decisions").argument("<workflow-id>").option("--root <path>").action(async (workflowId, options) => console.log(JSON.stringify(await recordBrainstormDecisions(rootOf(options), workflowId), null, 2)));
+program.command("adopt-worktree").argument("<workflow-id>").requiredOption("--worktree <path>").option("--root <path>").action(async (workflowId, options) => console.log(JSON.stringify(await adoptWorkflowWorktree(rootOf(options), workflowId, resolve(options.worktree)), null, 2)));
 program.command("resume").argument("<workflow-id>").requiredOption("--to <status>").option("--root <path>").action(async (workflowId, options) => console.log(JSON.stringify(await resumeWorkflow(rootOf(options), workflowId, options.to), null, 2)));
 program.command("reset-project").option("--root <path>").requiredOption("--confirm", "confirm removal of CDO workflow artifacts and runtime only").action(async (options) => { await resetProject(rootOf(options)); console.log("Removed CDO workflow artifacts and runtime; project configuration and agents were preserved"); });
 
@@ -195,15 +196,6 @@ program
   .option("--root <path>")
   .action(async (workflowId, assignmentId, options) => {
     console.log(JSON.stringify(await reconcileAgentAssignment(rootOf(options), workflowId, assignmentId), null, 2));
-  });
-
-program
-  .command("transition")
-  .argument("<workflow-id>")
-  .argument("<status>")
-  .option("--root <path>")
-  .action(async (workflowId, status, options) => {
-    console.log(JSON.stringify(await transitionWorkflow(rootOf(options), workflowId, status), null, 2));
   });
 
 program

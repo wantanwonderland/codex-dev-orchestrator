@@ -7,8 +7,17 @@ import { WriterRoleSchema, WorkflowStatusSchema } from "./types.js";
 import { assessCompletionGate } from "./gates.js";
 import { AssignmentStore, type CreateAssignmentInput } from "./assignments.js";
 import { run } from "./process.js";
-import { allTasksComplete, loadTaskGraph, markTaskComplete, markTaskPartial, markTaskRemediating, markTaskReviewing, markTaskRunning, nextReadyTask, taskById } from "./task-graph.js";
+import { allTasksComplete, loadTaskGraph, markTaskComplete, markTaskDiagnosing, markTaskEvidencePending, markTaskPartial, markTaskRemediating, markTaskReviewing, markTaskRunning, nextReadyTask, taskById } from "./task-graph.js";
 import type { AgentAssignment, ArtifactFrontmatter, WorkflowState, WorkflowStatus } from "./types.js";
+import { boundWorktree, inspectWorkflowWorktree } from "./worktree.js";
+
+export async function adoptWorkflowWorktree(projectRoot: string, workflowId: string, worktreePath: string): Promise<WorkflowState> {
+  const store = new StateStore(projectRoot, workflowId);
+  const state = await store.load();
+  if (state.worktree) throw new Error("Workflow already has a worktree binding");
+  const binding = await inspectWorkflowWorktree(projectRoot, worktreePath);
+  return store.save({ ...state, schema: "cdo-state/v3", worktree: binding }, "workflow.worktree_adopted", binding);
+}
 
 export async function acquireLease(projectRoot: string, workflowId: string, role: string, sessionId: string) {
   const store = new StateStore(projectRoot, workflowId);
@@ -36,7 +45,7 @@ export async function transitionWorkflow(projectRoot: string, workflowId: string
   const state = await store.load();
   const parsed = WorkflowStatusSchema.parse(status);
   if (parsed === "complete") {
-    const gate = await assessCompletionGate(projectRoot, workflowId);
+    const gate = await assessCompletionGate(boundWorktree(state, projectRoot), workflowId);
     if (!gate.ready) throw new Error(`Completion gate is not satisfied: ${gate.missing.join(", ")}`);
   }
   return store.transition(state, parsed, `workflow.${parsed}`);
@@ -46,7 +55,8 @@ export async function recordBrainstormDecisions(projectRoot: string, workflowId:
   const store = new StateStore(projectRoot, workflowId);
   const state = await store.load();
   if (state.status !== "brainstorming") throw new Error("Workflow is not brainstorming");
-  const artifact = (await import("./frontmatter.js")).parseArtifact(await readFile(join(projectRoot, ".codex", "workflows", workflowId, "decisions.md"), "utf8"));
+  const root = boundWorktree(state, projectRoot);
+  const artifact = (await import("./frontmatter.js")).parseArtifact(await readFile(join(root, ".codex", "workflows", workflowId, "decisions.md"), "utf8"));
   if (artifact.frontmatter.kind !== "decisions" || !["ready", "complete"].includes(artifact.frontmatter.status)) throw new Error("decisions.md must be ready or complete");
   return store.transition(await store.save({ ...state, decisionsComplete: true }, "brainstorm.completed"), "planning", "workflow.planning");
 }
@@ -60,8 +70,9 @@ export async function resumeWorkflow(projectRoot: string, workflowId: string, st
 
 export async function statusSummary(projectRoot: string, workflowId: string) {
   const state = await new StateStore(projectRoot, workflowId).load();
-  await readFile(join(projectRoot, ".codex", "workflows", workflowId, "index.md"), "utf8");
-  const assignments = (await new AssignmentStore(projectRoot, workflowId).load()).assignments;
+  const root = boundWorktree(state, projectRoot);
+  await readFile(join(root, ".codex", "workflows", workflowId, "index.md"), "utf8");
+  const assignments = (await new AssignmentStore(root, workflowId).load()).assignments;
   const activeAssignments = assignments.filter((a) => ["queued", "running", "stopped", "reconciling"].includes(a.status));
   const lastAssignment = assignments.at(-1);
   return { ...state, coordination: { activeAssignments, lastAssignment, nextAction: nextAction(state, activeAssignments, lastAssignment), blockers: state.status === "needs_human" ? [state.humanGate?.reason ?? lastAssignment?.error ?? "Human decision required"] : [] } };
@@ -70,46 +81,57 @@ export async function statusSummary(projectRoot: string, workflowId: string) {
 export async function createAgentAssignment(projectRoot: string, workflowId: string, input: CreateAssignmentInput): Promise<AgentAssignment> {
   const store = new StateStore(projectRoot, workflowId);
   let state = await store.load();
+  const root = boundWorktree(state, projectRoot);
   assertStageAllowed(state, input.stage);
   if (input.stage === "implementation" && input.taskId) {
     state = markTaskRunning(state, input.taskId);
     await store.save(state, "task.started", { taskId: input.taskId });
   }
-  const head = await currentHead(projectRoot);
-  return new AssignmentStore(projectRoot, workflowId).create({
+  const head = await currentHead(root);
+  return new AssignmentStore(root, workflowId).create({
     ...input,
     sourceCommit: input.sourceCommit ?? (["implementation", "remediation"].includes(input.stage) ? head : undefined),
     targetCommit: input.targetCommit ?? (["task_review", "phase_review", "diagnosis", "browser_verification"].includes(input.stage) ? head : undefined),
+    baseCommit: input.baseCommit ?? input.sourceCommit ?? (["implementation", "remediation"].includes(input.stage) ? head : undefined),
+    headCommit: input.headCommit ?? input.targetCommit ?? (["task_review", "phase_review", "diagnosis", "browser_verification"].includes(input.stage) ? head : undefined),
+    worktreePath: state.worktree?.worktreePath,
+    branch: state.worktree?.branch,
   });
 }
 
 export async function bindAgentAssignment(projectRoot: string, workflowId: string, assignmentId: string, event: "start" | "stop", agentId: string, stopReason?: string): Promise<AgentAssignment> {
-  await new StateStore(projectRoot, workflowId).load();
-  const assignments = new AssignmentStore(projectRoot, workflowId);
+  const state = await new StateStore(projectRoot, workflowId).load();
+  const assignments = new AssignmentStore(boundWorktree(state, projectRoot), workflowId);
   return event === "start" ? assignments.bindStartedById(assignmentId, agentId) : assignments.bindStoppedById(assignmentId, agentId, stopReason);
 }
 
 export async function listAgentAssignments(projectRoot: string, workflowId: string): Promise<AgentAssignment[]> {
-  await new StateStore(projectRoot, workflowId).load();
-  return (await new AssignmentStore(projectRoot, workflowId).load()).assignments;
+  const state = await new StateStore(projectRoot, workflowId).load();
+  return (await new AssignmentStore(boundWorktree(state, projectRoot), workflowId).load()).assignments;
 }
 
 export async function reconcileAgentAssignment(projectRoot: string, workflowId: string, assignmentId: string) {
-  const assignments = new AssignmentStore(projectRoot, workflowId);
+  const store = new StateStore(projectRoot, workflowId);
+  const state = await store.load();
+  const root = boundWorktree(state, projectRoot);
+  const assignments = new AssignmentStore(root, workflowId);
   let assignment = await assignments.get(assignmentId);
-  if (["reconciled", "failed", "needs_human"].includes(assignment.status) && assignment.nextAction) return { assignment, nextAction: assignment.nextAction, state: await new StateStore(projectRoot, workflowId).load() };
+  if (["reconciled", "failed", "needs_human"].includes(assignment.status) && assignment.nextAction) return { assignment, nextAction: assignment.nextAction, state };
   if (assignment.status === "reconciling") return completeReconciliation(projectRoot, workflowId, assignments, assignment);
-  const state = await new StateStore(projectRoot, workflowId).load();
   if (["executor", "fixer"].includes(assignment.role) && (state.writerLease || !assignment.writerLeaseSessionId)) {
     return humanGate(projectRoot, workflowId, assignments, assignment, "destructive_action", state.writerLease ? "Writer must release its lease before reconciliation" : "Writer lease evidence is missing");
   }
   let frontmatter: ArtifactFrontmatter;
   try {
-    frontmatter = await assignments.validateOutput(assignment, await currentHead(projectRoot));
+    const head = await currentHead(root);
+    if (head && ["implementation", "remediation"].includes(assignment.stage)) assignment = await assignments.recordHeadCommit(assignment.id, head);
+    await assertCommitRange(root, assignment);
+    frontmatter = await assignments.validateOutput(assignment, head);
     assertTerminalArtifactStatus(assignment, frontmatter);
   } catch (error) {
-    const failure = await recordAgentFailure(projectRoot, workflowId, assignment.operationKey, error instanceof Error ? error.message : String(error));
-    const finished = await assignments.finish(assignment.id, { status: "failed", outcome: failure.diagnose ? "continue" : "retry", error: failure.reason, nextAction: failure.diagnose ? "assign_diagnosis" : `retry_${assignment.role}` });
+    const reason = error instanceof Error ? error.message : String(error);
+    const failure = await recordAgentFailure(projectRoot, workflowId, assignment.operationKey, reason, "artifact_contract", assignment);
+    const finished = await assignments.finish(assignment.id, { status: "failed", outcome: "retry", error: reason, nextAction: "repair_evidence" });
     return { assignment: finished, nextAction: finished.nextAction, state: failure.state };
   }
   const decision = await reconciliationDecision(projectRoot, workflowId, assignment, frontmatter, state);
@@ -118,13 +140,21 @@ export async function reconcileAgentAssignment(projectRoot: string, workflowId: 
   return completeReconciliation(projectRoot, workflowId, assignments, assignment);
 }
 
-export async function recordAgentFailure(projectRoot: string, workflowId: string, operationKey: string, reason: string) {
+export async function recordAgentFailure(projectRoot: string, workflowId: string, operationKey: string, reason: string, failureClass: "implementation" | "artifact_contract" | "agent_runtime" | "controller" = "implementation", assignment?: AgentAssignment) {
   const store = new StateStore(projectRoot, workflowId);
   const state = await store.load();
+  if (failureClass === "artifact_contract") {
+    const taskId = assignment?.taskId ?? state.activeTaskId;
+    const next = taskId ? await store.save(markTaskEvidencePending(state, taskId), "agent.evidence_repair_scheduled", { operationKey, reason, failureClass, taskId }) : state;
+    return { retry: true, diagnose: false, reason, state: next };
+  }
   const failures = (state.operationFailures[operationKey] ?? 0) + 1;
   const diagnose = failures >= 3;
-  const next = await store.save({ ...state, operationFailures: { ...state.operationFailures, [operationKey]: failures }, status: diagnose ? "diagnosing" : state.status }, diagnose ? "agent.diagnosis_scheduled" : "agent.retry_scheduled", { operationKey, reason, failures });
-  const assignments = new AssignmentStore(projectRoot, workflowId);
+  const diagnosed = diagnose && (assignment?.taskId ?? state.activeTaskId)
+    ? markTaskDiagnosing({ ...state, operationFailures: { ...state.operationFailures, [operationKey]: failures }, status: "diagnosing" }, assignment?.taskId ?? state.activeTaskId!)
+    : { ...state, operationFailures: { ...state.operationFailures, [operationKey]: failures }, status: diagnose ? "diagnosing" : state.status };
+  const next = await store.save(diagnosed, diagnose ? "agent.diagnosis_scheduled" : "agent.retry_scheduled", { operationKey, reason, failures, failureClass });
+  const assignments = new AssignmentStore(boundWorktree(state, projectRoot), workflowId);
   const pending = (await assignments.load()).assignments.find((assignment) => assignment.operationKey === operationKey && ["queued", "running", "stopped", "reconciling"].includes(assignment.status));
   if (pending) await assignments.finish(pending.id, { status: "failed", outcome: diagnose ? "continue" : "retry", error: reason, nextAction: diagnose ? "assign_diagnosis" : `retry_${pending.role}` });
   return { retry: !diagnose, diagnose, reason, state: next };
@@ -151,11 +181,21 @@ async function reconciliationDecision(projectRoot: string, workflowId: string, a
       if (task && (task.reviewRequired || assignment.stage === "remediation")) return { nextAction: "assign_task_reviewer", targetWorkflowStatus: "reviewing" };
       return { nextAction: "advance_task", targetWorkflowStatus: "executing" };
     }
-    case "diagnosis": return fm.status === "failed" ? { nextAction: "assign_planner", targetWorkflowStatus: "planning" } : { nextAction: "retry_executor", targetWorkflowStatus: "executing" };
+    case "diagnosis": {
+      switch (fm.diagnosis_recommendation) {
+        case "assign_fixer": return { nextAction: "assign_fixer", targetWorkflowStatus: "remediating" };
+        case "repair_evidence": return { nextAction: "repair_evidence", targetWorkflowStatus: "executing" };
+        case "assign_planner": return { nextAction: "assign_planner", targetWorkflowStatus: "planning" };
+        case "retry_executor": return { nextAction: "retry_executor", targetWorkflowStatus: "executing" };
+        case "cancel_task": return { nextAction: "request_human", humanGate: { kind: "product_decision", reason: "Diagnosis recommends cancelling the task" } };
+        case "request_human": return { nextAction: "request_human", humanGate: { kind: "product_decision", reason: "Diagnosis requires a human decision" } };
+        default: throw new Error("Diagnosis artifact requires diagnosis_recommendation");
+      }
+    }
     case "task_review": return fm.status === "failed" ? { nextAction: "assign_fixer", targetWorkflowStatus: "remediating" } : { nextAction: "advance_task", targetWorkflowStatus: "executing" };
     case "phase_review": {
       if (fm.status === "failed") return { nextAction: "assign_fixer", targetWorkflowStatus: "remediating" };
-      const gate = await assessCompletionGate(projectRoot, workflowId);
+      const gate = await assessCompletionGate(boundWorktree(state, projectRoot), workflowId);
       return gate.customerVisibleUi ? { nextAction: "assign_browser-verifier", targetWorkflowStatus: "browser_verification" } : { nextAction: "complete", targetWorkflowStatus: "complete" };
     }
     case "browser_verification": return fm.status === "failed" ? { nextAction: "assign_fixer", targetWorkflowStatus: "remediating" } : { nextAction: "complete", targetWorkflowStatus: "complete" };
@@ -167,7 +207,8 @@ async function completeReconciliation(projectRoot: string, workflowId: string, a
   let state = await store.load();
   try {
     if (assignment.stage === "research") state = await store.save({ ...state, researchComplete: true }, "research.completed");
-    if (assignment.stage === "planning") state = await store.save({ ...state, tasks: await loadTaskGraph(projectRoot, workflowId), planRevision: state.planRevision + 1 }, "plan.persisted");
+    const root = boundWorktree(state, projectRoot);
+    if (assignment.stage === "planning") state = await store.save({ ...state, tasks: await loadTaskGraph(root, workflowId), planRevision: state.planRevision + 1 }, "plan.persisted");
     const taskId = assignment.taskId ?? state.activeTaskId;
     if (taskId && ["partial", "needs_context", "retryable_failure"].includes(assignment.artifactStatus ?? "")) {
       state = await store.save(markTaskPartial(state, taskId, assignment.artifactStatus), "task.partial", { taskId });
@@ -177,6 +218,8 @@ async function completeReconciliation(projectRoot: string, workflowId: string, a
     }
     if (taskId && ["implementation", "remediation"].includes(assignment.stage) && assignment.artifactStatus === "complete") state = assignment.nextAction === "assign_task_reviewer" ? await store.save(markTaskReviewing(state, taskId), "task.reviewing", { taskId }) : await store.save(markTaskComplete(state, taskId), "task.completed", { taskId });
     if (taskId && assignment.stage === "task_review") state = assignment.artifactStatus === "passed" ? await store.save(markTaskComplete(state, taskId), "task.completed", { taskId }) : await store.save(markTaskRemediating(state, taskId), "task.remediating", { taskId });
+    if (taskId && assignment.stage === "diagnosis" && assignment.nextAction === "assign_fixer") state = await store.save(markTaskRemediating(state, taskId), "task.remediating", { taskId });
+    if (taskId && assignment.stage === "diagnosis" && assignment.nextAction === "repair_evidence") state = await store.save(markTaskEvidencePending(state, taskId), "task.evidence_pending", { taskId });
     if (assignment.nextAction === "advance_task" && allTasksComplete(state)) assignment = { ...assignment, nextAction: "assign_phase_reviewer", targetWorkflowStatus: "reviewing" };
     if (assignment.targetWorkflowStatus && state.status !== assignment.targetWorkflowStatus) state = await transitionWorkflow(projectRoot, workflowId, assignment.targetWorkflowStatus);
     await recordAgentSuccess(projectRoot, workflowId, assignment.operationKey);
@@ -184,7 +227,7 @@ async function completeReconciliation(projectRoot: string, workflowId: string, a
     return { assignment: finished, nextAction: finished.nextAction, state: await store.load() };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
-    const failure = await recordAgentFailure(projectRoot, workflowId, assignment.operationKey, reason);
+    const failure = await recordAgentFailure(projectRoot, workflowId, assignment.operationKey, reason, "controller", assignment);
     const failed = await assignments.get(assignment.id);
     return { assignment: failed, nextAction: failure.diagnose ? "assign_diagnosis" : `retry_${assignment.role}`, state: failure.state };
   }
@@ -205,7 +248,7 @@ function assertStageAllowed(state: WorkflowState, stage: CreateAssignmentInput["
 
 function assertTerminalArtifactStatus(assignment: AgentAssignment, fm: ArtifactFrontmatter): void {
   const common: ArtifactFrontmatter["status"][] = ["partial", "needs_context", "retryable_failure", "needs_replan", "external_blocker", "safety_gate"];
-  const allowed: Record<CreateAssignmentInput["stage"], ArtifactFrontmatter["status"][]> = { research: ["complete", ...common], planning: ["ready", "complete", ...common], implementation: ["complete", ...common], diagnosis: ["passed", "failed", ...common], task_review: ["passed", "failed", ...common], phase_review: ["passed", "failed", ...common], remediation: ["complete", ...common], browser_verification: ["passed", "failed", ...common] };
+  const allowed: Record<CreateAssignmentInput["stage"], ArtifactFrontmatter["status"][]> = { research: ["complete", ...common], planning: ["ready", "complete", ...common], implementation: ["complete", ...common], diagnosis: ["complete", ...common], task_review: ["passed", "failed", ...common], phase_review: ["passed", "failed", ...common], remediation: ["complete", ...common], browser_verification: ["passed", "failed", ...common] };
   if (!allowed[assignment.stage].includes(fm.status)) throw new Error(`Artifact status ${fm.status} is not terminal for ${assignment.stage}`);
 }
 
@@ -213,12 +256,23 @@ function nextAction(state: WorkflowState, active: AgentAssignment[], last?: Agen
   const pending = active.find((a) => a.status === "stopped") ?? active.find((a) => a.status === "reconciling") ?? active.find((a) => a.status === "running") ?? active.find((a) => a.status === "queued");
   if (pending) return pending.status === "stopped" ? `reconcile_assignment:${pending.id}` : pending.status === "reconciling" ? `resume_reconciliation:${pending.id}` : pending.status === "running" ? `wait_for_${pending.role}` : `spawn_${pending.role}`;
   if (last?.nextAction && ["retry", "continue", "replan"].includes(last.outcome ?? "")) return last.nextAction;
-  const actions: Record<WorkflowState["status"], string> = { discovering: "assign_researcher", brainstorming: "brainstorm_with_human", planning: "assign_planner", executing: allTasksComplete(state) ? "assign_phase_reviewer" : nextReadyTask(state) ? `assign_executor:${nextReadyTask(state)?.id}` : "diagnose_task_graph", diagnosing: "assign_diagnosis", reviewing: "assign_reviewer", remediating: "assign_fixer", browser_verification: "assign_browser-verifier", needs_human: "request_human", complete: "complete" };
+  const actions: Record<WorkflowState["status"], string> = { discovering: "assign_researcher", brainstorming: "brainstorm_with_human", planning: "assign_planner", executing: allTasksComplete(state) ? "assign_phase_reviewer" : nextReadyTask(state) ? `assign_executor:${nextReadyTask(state)?.id}` : "diagnose_task_graph", diagnosing: "assign_diagnosis", reviewing: "assign_reviewer", remediating: "assign_fixer", browser_verification: "assign_browser-verifier", needs_human: "request_human", controller_error: "recover_controller", cancelled: "cancelled", superseded: "superseded", complete: "complete" };
   return actions[state.status];
 }
 
 async function currentHead(projectRoot: string): Promise<string | undefined> {
   try { return (await run("git", ["rev-parse", "HEAD"], projectRoot)).stdout.trim() || undefined; } catch { return undefined; }
+}
+
+async function assertCommitRange(projectRoot: string, assignment: AgentAssignment): Promise<void> {
+  const base = assignment.baseCommit ?? assignment.sourceCommit;
+  const head = assignment.headCommit ?? assignment.targetCommit;
+  if (!base || !head) return;
+  try {
+    await run("git", ["merge-base", "--is-ancestor", base, head], projectRoot);
+  } catch {
+    throw new Error("Assignment commit range is not an ancestor relationship in its bound worktree");
+  }
 }
 
 export function failureFingerprint(reason: string): string { return createHash("sha256").update(reason.trim().toLowerCase()).digest("hex").slice(0, 16); }

@@ -54,6 +54,15 @@ export function markTaskPartial(state: WorkflowState, taskId: string, fingerprin
   }), taskId);
 }
 
+/** Artifact-contract defects are retryable evidence gaps, not failed implementation attempts. */
+export function markTaskEvidencePending(state: WorkflowState, taskId: string): WorkflowState {
+  return updateTask(state, taskId, (task) => ({ ...task, status: "evidence_pending" }), taskId);
+}
+
+export function markTaskDiagnosing(state: WorkflowState, taskId: string): WorkflowState {
+  return updateTask(state, taskId, (task) => ({ ...task, status: "diagnosing" }), taskId);
+}
+
 export function markTaskReviewing(state: WorkflowState, taskId: string): WorkflowState {
   return updateTask(state, taskId, (task) => ({ ...task, status: "reviewing" }), taskId);
 }

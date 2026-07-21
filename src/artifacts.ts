@@ -3,6 +3,8 @@ import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArtifact } from "./frontmatter.js";
 import { WorkflowIdSchema } from "./types.js";
+import { StateStore } from "./state-store.js";
+import { boundWorktree } from "./worktree.js";
 
 export async function validateWorkflowArtifacts(projectRoot: string, workflowId: string): Promise<string[]> {
   workflowId = WorkflowIdSchema.parse(workflowId);
@@ -25,7 +27,11 @@ export async function persistWorkflowArtifact(
   markdown: string,
 ): Promise<string> {
   workflowId = WorkflowIdSchema.parse(workflowId);
-  const workflowRoot = resolve(projectRoot, ".codex", "workflows", workflowId);
+  let root = projectRoot;
+  try { root = boundWorktree(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const workflowRoot = resolve(root, ".codex", "workflows", workflowId);
   const target = resolve(workflowRoot, relativePath);
   const relation = relative(workflowRoot, target);
   if (!relativePath.endsWith(".md") || isAbsolute(relativePath) || relation.startsWith("..") || isAbsolute(relation)) {
@@ -38,6 +44,23 @@ export async function persistWorkflowArtifact(
   await writeFile(temporary, markdown);
   await rename(temporary, target);
   return target;
+}
+
+/** Validate the whole handoff before writing any file, avoiding partial workflow artifacts. */
+export async function persistWorkflowArtifactBundle(
+  projectRoot: string,
+  workflowId: string,
+  artifacts: Array<{ relativePath: string; markdown: string }>,
+): Promise<string[]> {
+  if (!artifacts.length) throw new Error("Artifact bundle cannot be empty");
+  const seen = new Set<string>();
+  for (const artifact of artifacts) {
+    if (seen.has(artifact.relativePath)) throw new Error(`Duplicate artifact path: ${artifact.relativePath}`);
+    seen.add(artifact.relativePath);
+    const parsed = parseArtifact(artifact.markdown);
+    if (parsed.frontmatter.workflow_id !== WorkflowIdSchema.parse(workflowId)) throw new Error("Artifact workflow identity mismatch");
+  }
+  return Promise.all(artifacts.map((artifact) => persistWorkflowArtifact(projectRoot, workflowId, artifact.relativePath, artifact.markdown)));
 }
 
 async function markdownFiles(root: string): Promise<string[]> {

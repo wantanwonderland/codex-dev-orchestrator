@@ -16,11 +16,14 @@ const TRANSITIONS: Record<WorkflowStatus, WorkflowStatus[]> = {
   brainstorming: ["planning", "needs_human"],
   planning: ["executing", "needs_human"],
   executing: ["planning", "diagnosing", "reviewing", "browser_verification", "needs_human"],
-  diagnosing: ["planning", "executing", "reviewing", "needs_human"],
+  diagnosing: ["planning", "executing", "reviewing", "remediating", "needs_human", "controller_error"],
   reviewing: ["executing", "remediating", "browser_verification", "complete", "needs_human"],
-  remediating: ["diagnosing", "reviewing", "needs_human"],
+  remediating: ["diagnosing", "reviewing", "needs_human", "controller_error"],
   browser_verification: ["remediating", "complete", "needs_human"],
-  needs_human: ["discovering", "brainstorming", "planning", "executing", "diagnosing", "reviewing", "browser_verification"],
+  needs_human: ["discovering", "brainstorming", "planning", "executing", "diagnosing", "reviewing", "remediating", "browser_verification", "controller_error"],
+  controller_error: ["discovering", "brainstorming", "planning", "executing", "diagnosing", "reviewing", "remediating", "needs_human"],
+  cancelled: [],
+  superseded: [],
   complete: [],
 };
 
@@ -37,10 +40,10 @@ export class StateStore {
     this.eventsPath = join(this.runtimeDir, "events.jsonl");
   }
 
-  async create(input: { objective: string; tier: WorkflowTier; mode: WorkflowMode }): Promise<WorkflowState> {
+  async create(input: { objective: string; tier: WorkflowTier; mode: WorkflowMode; worktree?: WorkflowState["worktree"] }): Promise<WorkflowState> {
     const now = new Date().toISOString();
     const state = WorkflowStateSchema.parse({
-      schema: "cdo-state/v2",
+      schema: "cdo-state/v3",
       workflowId: this.workflowId,
       projectRoot: this.projectRoot,
       objective: input.objective,
@@ -48,6 +51,7 @@ export class StateStore {
       mode: input.mode,
       status: input.tier === "small" ? "planning" : "discovering",
       phase: "phase-1",
+      worktree: input.worktree,
       researchComplete: input.tier === "small",
       decisionsComplete: input.tier === "small",
       planRevision: 0,

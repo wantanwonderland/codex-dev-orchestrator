@@ -4,10 +4,12 @@ import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderArtifact } from "./frontmatter.js";
 import { StateStore } from "./state-store.js";
+import { loadProjectConfig } from "./config.js";
+import { createWorkflowWorktree } from "./worktree.js";
 import { WorkflowIdSchema, type WorkflowMode, type WorkflowTier } from "./types.js";
 
 const PACKAGE_ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const CDO_VERSION = "0.4.0";
+const CDO_VERSION = "0.5.0";
 const AGENT_NAMES = ["coordinator", "researcher", "planner", "executor", "reviewer", "fixer", "browser-verifier"] as const;
 const V011_AGENT_HASHES: Partial<Record<(typeof AGENT_NAMES)[number], string>> = {
   "browser-verifier": "c48dc2dd83ee5a3f7c3a9a350bea55a00277520d2756c8548aa03d1ada84b389",
@@ -77,9 +79,11 @@ export async function upgradeProject(projectRoot: string): Promise<{ updated: st
 export async function startWorkflow(
   projectRoot: string,
   input: { workflowId: string; objective: string; tier: WorkflowTier; mode?: WorkflowMode },
-): Promise<void> {
+): Promise<{ worktreePath: string; branch: string; baseCommit: string }> {
   const workflowId = WorkflowIdSchema.parse(input.workflowId);
-  const root = join(projectRoot, ".codex", "workflows", workflowId);
+  const config = await loadProjectConfig(projectRoot);
+  const binding = await createWorkflowWorktree(projectRoot, workflowId, { directory: config.workflow.worktree_dir, branchPrefix: config.workflow.branch_prefix });
+  const root = join(binding.worktreePath, ".codex", "workflows", workflowId);
   await mkdir(join(root, "tasks"), { recursive: true });
   await mkdir(join(root, "reports"), { recursive: true });
   await mkdir(join(root, "reviews"), { recursive: true });
@@ -134,8 +138,11 @@ export async function startWorkflow(
       { flag: "wx" },
     );
   }
-  const store = new StateStore(projectRoot, workflowId);
-  await store.create({ objective: input.objective, tier: input.tier, mode: input.mode ?? "autonomous" });
+  const store = new StateStore(binding.worktreePath, workflowId);
+  await store.create({ objective: input.objective, tier: input.tier, mode: input.mode ?? "autonomous", worktree: binding });
+  await (await import("./process.js")).run("git", ["add", `.codex/workflows/${workflowId}`], binding.worktreePath);
+  await (await import("./process.js")).run("git", ["commit", "-m", `chore(cdo): start ${workflowId}`], binding.worktreePath);
+  return binding;
 }
 
 export async function resetProject(projectRoot: string): Promise<void> {
@@ -158,7 +165,7 @@ async function appendUnique(path: string, line: string): Promise<void> {
 }
 
 function projectConfig(input: { projectId: string; defaultBranch: string }): string {
-  return `[project]\nid = "${input.projectId}"\ndefault_branch = "${input.defaultBranch}"\n\n[models]\ncoordinator = "gpt-5.6-terra"\nresearcher = "gpt-5.6-sol"\nplanner = "gpt-5.6-sol"\nreviewer = "gpt-5.6-sol"\nworker = "gpt-5.6-terra"\n\n[effort]\ncoordinator = "high"\nresearcher = "high"\nplanner = "high"\nreviewer = "high"\nworker = "medium"\n\n[workflow]\nno_progress_limit = 3\nrequire_brainstorm_for = ["normal", "large"]\nauto_commit = true\n\n[browser]\ndesktop_viewport = "1440x900"\nmobile_viewport = "390x844"\nrequire_live_for_customer_ui = true\nallowed_roles = ["admin", "member", "customer"]\n\n[credentials]\nprofile_names = ["local"]\nallowed_environments = ["local", "test"]\nallowed_hosts = ["localhost", "127.0.0.1"]\nallow_direct_local_access = true\n\n[git]\nauto_push_checkpoint = true\nauto_draft_pr = true\nrequire_approval_if_deploy_coupled = true\n`;
+  return `[project]\nid = "${input.projectId}"\ndefault_branch = "${input.defaultBranch}"\n\n[models]\ncoordinator = "gpt-5.6-terra"\nresearcher = "gpt-5.6-sol"\nplanner = "gpt-5.6-sol"\nreviewer = "gpt-5.6-sol"\nworker = "gpt-5.6-terra"\n\n[effort]\ncoordinator = "high"\nresearcher = "high"\nplanner = "high"\nreviewer = "high"\nworker = "medium"\n\n[workflow]\nno_progress_limit = 3\nrequire_brainstorm_for = ["normal", "large"]\nauto_commit = true\nworktree_dir = ".worktrees"\nbranch_prefix = "cdo"\n\n[browser]\ndesktop_viewport = "1440x900"\nmobile_viewport = "390x844"\nrequire_live_for_customer_ui = true\nallowed_roles = ["admin", "member", "customer"]\n\n[credentials]\nprofile_names = ["local"]\nallowed_environments = ["local", "test"]\nallowed_hosts = ["localhost", "127.0.0.1"]\nallow_direct_local_access = true\n\n[git]\nauto_push_checkpoint = true\nauto_draft_pr = true\nrequire_approval_if_deploy_coupled = true\n`;
 }
 
 async function installCodexConfig(projectRoot: string): Promise<void> {

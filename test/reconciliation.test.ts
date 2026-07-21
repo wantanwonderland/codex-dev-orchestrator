@@ -54,7 +54,7 @@ describe("autonomous assignment reconciliation", () => {
     expect(third).toMatchObject({ nextAction: "assign_diagnosis", state: { status: "diagnosing", tasks: [{ consecutiveNoProgress: 3 }] } });
   });
 
-  it("routes repeated malformed handoffs to diagnosis on the third failure", async () => {
+  it("routes malformed handoffs to evidence repair without consuming implementation retries", async () => {
     const { root } = await setup("reviewing");
     for (let attempt = 1; attempt <= 3; attempt += 1) {
       const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "phase-review", role: "reviewer", stage: "phase_review", inputPath: "reports/task-1.md", outputPath: "reviews/phase-final.md", expectedKind: "review", sourceCommit: "base" });
@@ -62,9 +62,9 @@ describe("autonomous assignment reconciliation", () => {
       await assignments.bindStartedById(assignment.id, `reviewer-${attempt}`);
       await assignments.bindStoppedById(assignment.id, `reviewer-${attempt}`);
       const result = await reconcileAgentAssignment(root, "wf-1", assignment.id);
-      expect(result.nextAction).toBe(attempt === 3 ? "assign_diagnosis" : "retry_reviewer");
+      expect(result.nextAction).toBe("repair_evidence");
     }
-    expect((await new StateStore(root, "wf-1").load()).status).toBe("diagnosing");
+    expect((await new StateStore(root, "wf-1").load()).status).toBe("reviewing");
   });
 
   it("uses a typed human gate only for missing writer safety evidence", async () => {
