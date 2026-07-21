@@ -5,7 +5,7 @@ import { classifyRisk } from "./risk.js";
 import { run } from "./process.js";
 import { WorkflowIdSchema } from "./types.js";
 import { StateStore } from "./state-store.js";
-import { boundWorktree } from "./worktree.js";
+import { boundWorktree, workflowArtifactRoot } from "./worktree.js";
 
 export async function assessCompletionGate(projectRoot: string, workflowId: string): Promise<{
   ready: boolean;
@@ -13,11 +13,16 @@ export async function assessCompletionGate(projectRoot: string, workflowId: stri
   customerVisibleUi: boolean;
 }> {
   workflowId = WorkflowIdSchema.parse(workflowId);
+  let artifactRoot = projectRoot;
   let sourceRoot = projectRoot;
-  try { sourceRoot = boundWorktree(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
+  try {
+    const state = await new StateStore(projectRoot, workflowId).load();
+    artifactRoot = workflowArtifactRoot(state, projectRoot);
+    sourceRoot = boundWorktree(state, projectRoot);
+  } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const root = join(sourceRoot, ".codex", "workflows", workflowId);
+  const root = join(artifactRoot, ".codex", "workflows", workflowId);
   const planningText = await readAvailable([
     join(root, "index.md"),
     join(root, "spec.md"),

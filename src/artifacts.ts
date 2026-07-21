@@ -4,15 +4,15 @@ import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArtifact } from "./frontmatter.js";
 import { WorkflowIdSchema } from "./types.js";
 import { StateStore } from "./state-store.js";
-import { boundWorktree } from "./worktree.js";
+import { workflowArtifactRoot } from "./worktree.js";
 
 export async function validateWorkflowArtifacts(projectRoot: string, workflowId: string): Promise<string[]> {
   workflowId = WorkflowIdSchema.parse(workflowId);
-  let sourceRoot = projectRoot;
-  try { sourceRoot = boundWorktree(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
+  let artifactRoot = projectRoot;
+  try { artifactRoot = workflowArtifactRoot(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
-  const root = join(sourceRoot, ".codex", "workflows", workflowId);
+  const root = join(artifactRoot, ".codex", "workflows", workflowId);
   const paths = await markdownFiles(root);
   if (!paths.some((path) => path.endsWith("/index.md"))) throw new Error("Workflow index.md is missing");
   for (const path of paths) {
@@ -32,7 +32,7 @@ export async function persistWorkflowArtifact(
 ): Promise<string> {
   workflowId = WorkflowIdSchema.parse(workflowId);
   let root = projectRoot;
-  try { root = boundWorktree(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
+  try { root = workflowArtifactRoot(await new StateStore(projectRoot, workflowId).load(), projectRoot); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const workflowRoot = resolve(root, ".codex", "workflows", workflowId);

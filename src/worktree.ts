@@ -31,6 +31,16 @@ export function boundWorktree(state: WorkflowState, fallback: string): string {
   return state.worktree?.worktreePath ?? fallback;
 }
 
+/**
+ * Workflow plans, reports, and reviews are controller evidence. They remain
+ * rooted in the checkout that created the workflow even when source changes
+ * happen in a linked worktree. This also preserves workflows created before
+ * worktree-first execution was introduced.
+ */
+export function workflowArtifactRoot(state: WorkflowState, fallback: string): string {
+  return state.projectRoot || fallback;
+}
+
 /** Explicitly bind a legacy workflow to an already-created Git worktree. */
 export async function inspectWorkflowWorktree(projectRoot: string, worktreePath: string): Promise<{ worktreePath: string; branch: string; baseCommit: string; commonGitDir: string }> {
   const primary = (await run("git", ["rev-parse", "--show-toplevel"], projectRoot)).stdout.trim();

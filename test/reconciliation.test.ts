@@ -71,6 +71,35 @@ describe("autonomous assignment reconciliation", () => {
     expect(await assignments.get(assignment.id)).toMatchObject({ status: "failed", error: "No live Codex subagent exists for a running assignment" });
   });
 
+  it("reclaims an orphaned writer lease from a prior parent session only after no-live-agent confirmation", async () => {
+    const { root } = await setup("executing");
+    const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "orphan-writer", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/orphan-writer.md", expectedKind: "executor-report" });
+    const assignments = new AssignmentStore(root, "wf-1");
+    await assignments.bindStartedById(assignment.id, "agent-orphan");
+    await acquireLease(root, "wf-1", "executor", "old-parent");
+    const recovered = await driveWorkflow(root, "wf-1", "new-parent", true);
+    expect(recovered).toMatchObject({ action: "route", nextAction: "retry_executor" });
+    expect(recovered.state.writerLease).toBeUndefined();
+    expect(await assignments.get(assignment.id)).toMatchObject({ status: "failed", error: "No live Codex subagent exists for a running assignment" });
+  });
+
+  it("recovers a stale writer-release gate from a prior parent session", async () => {
+    const { root } = await setup("executing");
+    const assignment = await createAgentAssignment(root, "wf-1", { operationKey: "gated-writer", role: "executor", stage: "implementation", taskId: "task-1", inputPath: "tasks/task-1.md", outputPath: "reports/gated-writer.md", expectedKind: "executor-report" });
+    const assignments = new AssignmentStore(root, "wf-1");
+    await assignments.bindStartedById(assignment.id, "agent-gated");
+    await acquireLease(root, "wf-1", "executor", "old-parent");
+    await assignments.finish(assignment.id, { status: "needs_human", outcome: "needs_human", error: "Writer must release its lease before reconciliation", nextAction: "request_human" });
+    const store = new StateStore(root, "wf-1");
+    const state = await store.load();
+    await store.save({ ...state, status: "needs_human", humanGate: { kind: "destructive_action", reason: "Writer must release its lease before reconciliation", requestedAt: now } }, "test.writer_gate");
+
+    const recovered = await driveWorkflow(root, "wf-1", "new-parent", true);
+    expect(recovered).toMatchObject({ action: "route", nextAction: "retry_executor", state: { status: "executing" } });
+    expect(recovered.state.writerLease).toBeUndefined();
+    expect(await assignments.get(assignment.id)).toMatchObject({ status: "failed", nextAction: "retry_executor" });
+  });
+
   it("continues partial work without human approval", async () => {
     const { root } = await setup("executing");
     const { result } = await completeExecutor(root, "partial");
